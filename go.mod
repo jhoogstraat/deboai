@@ -1,3 +1,3 @@
-module github.com/jhoogstraat/ai-development-boost
+module github.com/jhoogstraat/deboai
 
 go 1.26.0

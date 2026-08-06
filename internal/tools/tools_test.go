@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/jhoogstraat/ai-development-boost/internal/git"
+	"github.com/jhoogstraat/deboai/internal/git"
 )
 
 func TestAllExposesTheDocumentedTools(t *testing.T) {

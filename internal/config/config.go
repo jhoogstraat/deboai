@@ -12,7 +12,7 @@ import (
 
 // EnvFileVariable overrides the environment files that LoadEnvFiles reads. It
 // accepts a list separated by the platform path separator.
-const EnvFileVariable = "DEVBOOST_ENV_FILE"
+const EnvFileVariable = "DEBOAI_ENV_FILE"
 
 // defaultEnvFiles are read, in order, from the repository root.
 var defaultEnvFiles = []string{".env", "ci.env"}

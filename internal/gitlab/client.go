@@ -9,10 +9,10 @@ import (
 	"net/url"
 	"sort"
 
-	"github.com/jhoogstraat/ai-development-boost/internal/config"
-	"github.com/jhoogstraat/ai-development-boost/internal/git"
-	"github.com/jhoogstraat/ai-development-boost/internal/httpx"
-	"github.com/jhoogstraat/ai-development-boost/internal/jsonutil"
+	"github.com/jhoogstraat/deboai/internal/config"
+	"github.com/jhoogstraat/deboai/internal/git"
+	"github.com/jhoogstraat/deboai/internal/httpx"
+	"github.com/jhoogstraat/deboai/internal/jsonutil"
 )
 
 const pageSize = 100

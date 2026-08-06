@@ -11,13 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jhoogstraat/ai-development-boost/internal/config"
-	"github.com/jhoogstraat/ai-development-boost/internal/jsonutil"
+	"github.com/jhoogstraat/deboai/internal/config"
+	"github.com/jhoogstraat/deboai/internal/jsonutil"
 )
 
 // RootVariable pins the repository the server inspects instead of discovering
 // it from the working directory.
-const RootVariable = "DEVBOOST_REPOSITORY_ROOT"
+const RootVariable = "DEBOAI_REPOSITORY_ROOT"
 
 // Repo runs git commands inside a single repository.
 type Repo struct {

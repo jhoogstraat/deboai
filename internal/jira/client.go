@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/jhoogstraat/ai-development-boost/internal/config"
-	"github.com/jhoogstraat/ai-development-boost/internal/httpx"
+	"github.com/jhoogstraat/deboai/internal/config"
+	"github.com/jhoogstraat/deboai/internal/httpx"
 )
 
 // Defaults for the paths and directories that differ between Jira deployments.

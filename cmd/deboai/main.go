@@ -1,4 +1,4 @@
-// Command devboost serves the AI Development Boost tools over the Model
+// Command deboai serves the AI Development Boost tools over the Model
 // Context Protocol on stdio.
 package main
 
@@ -9,14 +9,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/jhoogstraat/ai-development-boost/internal/config"
-	"github.com/jhoogstraat/ai-development-boost/internal/git"
-	"github.com/jhoogstraat/ai-development-boost/internal/mcp"
-	"github.com/jhoogstraat/ai-development-boost/internal/tools"
+	"github.com/jhoogstraat/deboai/internal/config"
+	"github.com/jhoogstraat/deboai/internal/git"
+	"github.com/jhoogstraat/deboai/internal/mcp"
+	"github.com/jhoogstraat/deboai/internal/tools"
 )
 
 const (
-	serverName   = "ai-development-boost"
+	serverName   = "deboai"
 	instructions = "Repository helper tools. Start this server from the repository you want to inspect."
 )
 

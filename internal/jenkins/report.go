@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jhoogstraat/ai-development-boost/internal/jsonutil"
-	"github.com/jhoogstraat/ai-development-boost/internal/textutil"
+	"github.com/jhoogstraat/deboai/internal/jsonutil"
+	"github.com/jhoogstraat/deboai/internal/textutil"
 )
 
 const (

@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/jhoogstraat/ai-development-boost/internal/git"
+	"github.com/jhoogstraat/deboai/internal/git"
 )
 
 var repo = git.Context{Project: "acme/example", RemoteHost: "gitlab.example", Branch: "feature/test", Commit: "abc123"}

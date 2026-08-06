@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jhoogstraat/ai-development-boost/internal/config"
-	"github.com/jhoogstraat/ai-development-boost/internal/git"
-	"github.com/jhoogstraat/ai-development-boost/internal/gitlab"
-	"github.com/jhoogstraat/ai-development-boost/internal/jenkins"
-	"github.com/jhoogstraat/ai-development-boost/internal/jira"
-	"github.com/jhoogstraat/ai-development-boost/internal/jsonutil"
-	"github.com/jhoogstraat/ai-development-boost/internal/mcp"
-	"github.com/jhoogstraat/ai-development-boost/internal/sonar"
+	"github.com/jhoogstraat/deboai/internal/config"
+	"github.com/jhoogstraat/deboai/internal/git"
+	"github.com/jhoogstraat/deboai/internal/gitlab"
+	"github.com/jhoogstraat/deboai/internal/jenkins"
+	"github.com/jhoogstraat/deboai/internal/jira"
+	"github.com/jhoogstraat/deboai/internal/jsonutil"
+	"github.com/jhoogstraat/deboai/internal/mcp"
+	"github.com/jhoogstraat/deboai/internal/sonar"
 )
 
 // All returns every tool, bound to the given repository. Clients are built per

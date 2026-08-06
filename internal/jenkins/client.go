@@ -9,8 +9,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/jhoogstraat/ai-development-boost/internal/config"
-	"github.com/jhoogstraat/ai-development-boost/internal/httpx"
+	"github.com/jhoogstraat/deboai/internal/config"
+	"github.com/jhoogstraat/deboai/internal/httpx"
 )
 
 // DefaultBuildStatusName is the GitLab commit status a Jenkins pipeline

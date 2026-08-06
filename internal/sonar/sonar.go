@@ -9,10 +9,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/jhoogstraat/ai-development-boost/internal/config"
-	"github.com/jhoogstraat/ai-development-boost/internal/httpx"
-	"github.com/jhoogstraat/ai-development-boost/internal/jsonutil"
-	"github.com/jhoogstraat/ai-development-boost/internal/textutil"
+	"github.com/jhoogstraat/deboai/internal/config"
+	"github.com/jhoogstraat/deboai/internal/httpx"
+	"github.com/jhoogstraat/deboai/internal/jsonutil"
+	"github.com/jhoogstraat/deboai/internal/textutil"
 )
 
 // DefaultBranchPrefix is prepended to a local branch name, because SonarQube

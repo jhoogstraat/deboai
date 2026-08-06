@@ -1,4 +1,6 @@
-# AI Development Boost
+# deboai
+
+*dev + boost + ai.*
 
 An opinionated [Model Context Protocol](https://modelcontextprotocol.io) server that gives a coding assistant fast, compact access to the development tools around a Git repository: GitLab merge request reviews, Jenkins build failures, Jira tickets, and SonarQube quality gates.
 
@@ -18,14 +20,14 @@ See [docs/tools.md](docs/tools.md) for the response shapes.
 ## Install
 
 ```sh
-go install github.com/jhoogstraat/ai-development-boost/cmd/devboost@latest
+go install github.com/jhoogstraat/deboai/cmd/deboai@latest
 ```
 
 Or build from a checkout — the Go toolchain is pinned with [mise](https://mise.jdx.dev):
 
 ```sh
 mise install
-go build -o bin/devboost ./cmd/devboost
+go build -o bin/deboai ./cmd/deboai
 ```
 
 ## Configure
@@ -47,7 +49,7 @@ Each integration is configured independently, and only fails the tool that needs
 
 `SONARQUBE_CLI_SERVER` and `SONARQUBE_CLI_TOKEN` are accepted as aliases for the SonarQube host and token.
 
-Two settings control the server itself: `DEVBOOST_REPOSITORY_ROOT` pins the repository to inspect (otherwise it is discovered from the working directory), and `DEVBOOST_ENV_FILE` overrides which environment files are loaded.
+Two settings control the server itself: `DEBOAI_REPOSITORY_ROOT` pins the repository to inspect (otherwise it is discovered from the working directory), and `DEBOAI_ENV_FILE` overrides which environment files are loaded.
 
 ## Run
 
@@ -56,8 +58,8 @@ The server speaks JSON-RPC over stdio and must start inside the repository it re
 ```json
 {
   "mcpServers": {
-    "ai-development-boost": {
-      "command": "devboost"
+    "deboai": {
+      "command": "deboai"
     }
   }
 }
@@ -66,7 +68,7 @@ The server speaks JSON-RPC over stdio and must start inside the repository it re
 To try it by hand:
 
 ```sh
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | devboost
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | deboai
 ```
 
 ## Layout
@@ -74,7 +76,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | devboost
 The repository follows the [Go project layout](https://github.com/golang-standards/project-layout):
 
 ```
-cmd/devboost        the server binary
+cmd/deboai        the server binary
 internal/mcp        the stdio MCP server: protocol, argument validation, dispatch
 internal/tools      wires the clients into the exposed tools
 internal/gitlab     merge requests, review discussions, commit statuses
