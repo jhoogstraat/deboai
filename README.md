@@ -1,5 +1,9 @@
 # deboai
 
+[![CI](https://github.com/jhoogstraat/deboai/actions/workflows/ci.yml/badge.svg)](https://github.com/jhoogstraat/deboai/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/jhoogstraat/deboai.svg)](https://pkg.go.dev/github.com/jhoogstraat/deboai)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)
+
 *dev + boost + ai.*
 
 An opinionated [Model Context Protocol](https://modelcontextprotocol.io) server that gives a coding assistant fast, compact access to the development tools around a Git repository: GitLab merge request reviews, Jenkins build failures, Jira tickets, and SonarQube quality gates.
@@ -53,7 +57,7 @@ Two settings control the server itself: `DEBOAI_REPOSITORY_ROOT` pins the reposi
 
 ## Run
 
-The server speaks JSON-RPC over stdio and must start inside the repository it reports on. Register it with your assistant, for example in `.mcp.json`:
+The server speaks JSON-RPC over stdio and must start inside the repository it reports on. It defaults to MCP protocol revision `2026-07-28`, negotiating down to `2025-06-18`, `2025-03-26`, or `2024-11-05` for clients that request one of those. Register it with your assistant, for example in `.mcp.json`:
 
 ```json
 {

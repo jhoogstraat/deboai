@@ -26,6 +26,7 @@ func TestChooseProtocolVersion(t *testing.T) {
 		expected  string
 	}{
 		{requested: "2025-03-26", expected: "2025-03-26"},
+		{requested: "2026-07-28", expected: "2026-07-28"},
 		{requested: "unsupported", expected: CurrentProtocol},
 		{requested: "", expected: CurrentProtocol},
 	} {
@@ -92,6 +93,14 @@ func TestServeInitializeReportsServerInfo(t *testing.T) {
 	serverInfo, _ := result["serverInfo"].(map[string]any)
 	if serverInfo["name"] != "test" {
 		t.Fatalf("initialize serverInfo = %#v, want name test", serverInfo)
+	}
+}
+
+func TestServeInitializeDefaultsToCurrentProtocol(t *testing.T) {
+	response := serve(t, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+	result, _ := response["result"].(map[string]any)
+	if result["protocolVersion"] != CurrentProtocol {
+		t.Fatalf("initialize protocolVersion = %v, want %v", result["protocolVersion"], CurrentProtocol)
 	}
 }
 

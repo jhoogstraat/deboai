@@ -8,13 +8,14 @@ import (
 )
 
 // CurrentProtocol is the protocol revision this server speaks by default.
-const CurrentProtocol = "2025-06-18"
+const CurrentProtocol = "2026-07-28"
 
 // SupportedProtocols lists the revisions accepted during initialization.
 var SupportedProtocols = map[string]bool{
 	"2024-11-05": true,
 	"2025-03-26": true,
 	"2025-06-18": true,
+	"2026-07-28": true,
 }
 
 // JSON-RPC error codes used by this server.
