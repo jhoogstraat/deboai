@@ -1,3 +1,3 @@
 module github.com/jhoogstraat/deboai
 
-go 1.26.0
+go 1.26.5

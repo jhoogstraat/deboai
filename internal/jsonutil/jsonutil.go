@@ -5,6 +5,7 @@ package jsonutil
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 )
 
 // String returns value when it is a string and the empty string otherwise.
@@ -103,12 +104,8 @@ func RemoveEmpty(value map[string]any) map[string]any {
 // Merge returns a new map containing first overlaid with second.
 func Merge(first, second map[string]any) map[string]any {
 	result := make(map[string]any, len(first)+len(second))
-	for key, value := range first {
-		result[key] = value
-	}
-	for key, value := range second {
-		result[key] = value
-	}
+	maps.Copy(result, first)
+	maps.Copy(result, second)
 	return result
 }
 

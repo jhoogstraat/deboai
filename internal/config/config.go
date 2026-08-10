@@ -50,7 +50,7 @@ func loadEnvFile(path string) error {
 		return fmt.Errorf("read environment file %s: %w", path, err)
 	}
 
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -130,7 +130,7 @@ func List(names ...string) []string {
 		return nil
 	}
 	items := make([]string, 0)
-	for _, item := range strings.Split(value, ",") {
+	for item := range strings.SplitSeq(value, ",") {
 		if item = strings.TrimSpace(item); item != "" {
 			items = append(items, item)
 		}

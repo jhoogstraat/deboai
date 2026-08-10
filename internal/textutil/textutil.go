@@ -21,7 +21,7 @@ func Clean(value string, limit int) string {
 		return ""
 	}
 	lines := make([]string, 0)
-	for _, line := range strings.Split(StripMarkup(value), "\n") {
+	for line := range strings.SplitSeq(StripMarkup(value), "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			lines = append(lines, line)
 		}
