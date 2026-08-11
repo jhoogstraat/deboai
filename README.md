@@ -37,7 +37,7 @@ go build -o bin/deboai ./cmd/deboai
 
 ## Configure
 
-The server reads its credentials from the environment, falling back to `.env` and `ci.env` in the repository it inspects. Variables already set in the environment always win. Copy [configs/example.env](configs/example.env) as a starting point:
+The server reads its credentials from the environment, falling back to `.env` and `debo.env` in the repository it inspects. Variables already set in the environment always win. Copy [configs/example.env](configs/example.env) as a starting point:
 
 ```sh
 cp configs/example.env /path/to/your/repo/.env
