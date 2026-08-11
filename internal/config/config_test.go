@@ -37,6 +37,28 @@ func TestLoadIgnoresMissingFiles(t *testing.T) {
 	}
 }
 
+func TestLoadEnvFileVariableOverridesWorktreeDefaults(t *testing.T) {
+	root := t.TempDir()
+	for name, contents := range map[string]string{
+		".env":       "SELECTED=default\n",
+		"debo.env":   "SELECTED=secondary\n",
+		"custom.env": "SELECTED=configured\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(EnvFileVariable, "custom.env")
+
+	values, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual := values["SELECTED"]; actual != "configured" {
+		t.Fatalf("SELECTED = %q, want configured", actual)
+	}
+}
+
 func TestValueAndRequire(t *testing.T) {
 	t.Setenv("PRIMARY", "")
 	t.Setenv("FALLBACK", "  value  ")
