@@ -10,38 +10,46 @@ import (
 	"strings"
 )
 
-// EnvFileVariable overrides the environment files that LoadEnvFiles reads. It
+// EnvFileVariable overrides the environment files that Load reads. It
 // accepts a list separated by the platform path separator.
 const EnvFileVariable = "DEBOAI_ENV_FILE"
 
 // defaultEnvFiles are read, in order, from the repository root.
 var defaultEnvFiles = []string{".env", "debo.env"}
 
-// LoadEnvFiles reads the repository environment files into the process
-// environment. Variables that are already set are never overwritten, and
-// missing files are ignored.
-func LoadEnvFiles(root string) error {
-	for _, name := range envFiles() {
+// Values is a request-scoped environment.
+type Values map[string]string
+
+// Load reads the process environment and repository environment files. Process
+// values take precedence; neither the process environment nor other requests
+// are modified.
+func Load(root string) (Values, error) {
+	values := Values{}
+	for _, entry := range os.Environ() {
+		key, value, _ := strings.Cut(entry, "=")
+		values[key] = value
+	}
+	for _, name := range envFiles(values) {
 		path := name
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(root, path)
 		}
-		if err := loadEnvFile(path); err != nil {
-			return err
+		if err := loadEnvFile(values, path); err != nil {
+			return nil, err
 		}
 	}
-	return nil
+	return values, nil
 }
 
-func envFiles() []string {
-	configured := strings.TrimSpace(os.Getenv(EnvFileVariable))
+func envFiles(values Values) []string {
+	configured := strings.TrimSpace(values[EnvFileVariable])
 	if configured == "" {
 		return defaultEnvFiles
 	}
 	return filepath.SplitList(configured)
 }
 
-func loadEnvFile(path string) error {
+func loadEnvFile(values Values, path string) error {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -61,15 +69,47 @@ func loadEnvFile(path string) error {
 		if !ok || !validKey(key) {
 			continue
 		}
-		if _, exists := os.LookupEnv(key); exists {
+		if _, exists := values[key]; exists {
 			continue
 		}
-		if err := os.Setenv(key, unquote(strings.TrimSpace(value))); err != nil {
-			return fmt.Errorf("set environment variable %s: %w", key, err)
-		}
+		values[key] = unquote(strings.TrimSpace(value))
 	}
 	return nil
 }
+
+// Value returns the first non-empty value of the named variables.
+func (v Values) Value(names ...string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(v[name]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+// ValueOr returns the first non-empty value of the named variables, or fallback.
+func (v Values) ValueOr(fallback string, names ...string) string {
+	if value := v.Value(names...); value != "" {
+		return value
+	}
+	return fallback
+}
+
+// Require returns the first non-empty value of the named variables and fails
+// when none of them is set.
+func (v Values) Require(names ...string) (string, error) {
+	if value := v.Value(names...); value != "" {
+		return value, nil
+	}
+	return "", fmt.Errorf("missing environment variable: %s", strings.Join(names, " or "))
+}
+
+// List splits the first non-empty value of the named variables on commas.
+func (v Values) List(names ...string) []string { return list(v.Value(names...)) }
+
+// Pairs parses the first non-empty value of the named variables as a
+// comma-separated list of key=value entries.
+func (v Values) Pairs(names ...string) map[string]string { return pairs(v.Value(names...)) }
 
 func unquote(value string) string {
 	if len(value) >= 2 && ((value[0] == '"' && value[len(value)-1] == '"') ||
@@ -125,7 +165,10 @@ func Require(names ...string) (string, error) {
 
 // List splits the first non-empty value of the named variables on commas.
 func List(names ...string) []string {
-	value := Value(names...)
+	return list(Value(names...))
+}
+
+func list(value string) []string {
 	if value == "" {
 		return nil
 	}
@@ -141,7 +184,11 @@ func List(names ...string) []string {
 // Pairs parses the first non-empty value of the named variables as a
 // comma-separated list of key=value entries.
 func Pairs(names ...string) map[string]string {
-	entries := List(names...)
+	return pairs(Value(names...))
+}
+
+func pairs(value string) map[string]string {
+	entries := list(value)
 	if len(entries) == 0 {
 		return nil
 	}

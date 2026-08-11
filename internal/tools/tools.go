@@ -25,7 +25,7 @@ func All() []mcp.Tool {
 			Name:        "repository_context",
 			Description: "Return the selected local Git worktree and checkout context.",
 			InputSchema: toolSchema(nil),
-			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, _ mcp.Arguments) (string, error) {
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, _ config.Values, _ mcp.Arguments) (string, error) {
 				return repositoryContext(ctx, repo)
 			}),
 		},
@@ -33,8 +33,8 @@ func All() []mcp.Tool {
 			Name:        "code_review_context",
 			Description: "Return the selected worktree's matching GitLab merge request and latest actionable review comment, when available.",
 			InputSchema: toolSchema(nil),
-			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, _ mcp.Arguments) (string, error) {
-				return gitLabMergeRequestContext(ctx, repo)
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, _ mcp.Arguments) (string, error) {
+				return gitLabMergeRequestContext(ctx, repo, values)
 			}),
 		},
 		{
@@ -43,8 +43,8 @@ func All() []mcp.Tool {
 			InputSchema: toolSchema(map[string]any{
 				"build_url": mcp.StringProperty("Optional Jenkins build URL. Omit it to inspect the active commit."),
 			}),
-			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, arguments mcp.Arguments) (string, error) {
-				return jenkinsStatus(ctx, repo, arguments.String("build_url"))
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments mcp.Arguments) (string, error) {
+				return jenkinsStatus(ctx, repo, values, arguments.String("build_url"))
 			}),
 		},
 		{
@@ -53,8 +53,8 @@ func All() []mcp.Tool {
 			InputSchema: toolSchema(map[string]any{
 				"ticket": mcp.StringProperty("Jira issue key, for example ABC-123."),
 			}, "ticket"),
-			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, arguments mcp.Arguments) (string, error) {
-				return jiraTicket(ctx, repo, arguments.String("ticket"))
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments mcp.Arguments) (string, error) {
+				return jiraTicket(ctx, repo, values, arguments.String("ticket"))
 			}),
 		},
 		{
@@ -63,8 +63,8 @@ func All() []mcp.Tool {
 			InputSchema: toolSchema(map[string]any{
 				"branch": mcp.StringProperty("Optional Git branch name. Omit it to use the current branch."),
 			}),
-			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, arguments mcp.Arguments) (string, error) {
-				return sonarIssues(ctx, repo, arguments.String("branch"))
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments mcp.Arguments) (string, error) {
+				return sonarIssues(ctx, repo, values, arguments.String("branch"))
 			}),
 		},
 	}
@@ -78,13 +78,17 @@ func toolSchema(properties map[string]any, required ...string) map[string]any {
 	return mcp.ObjectSchema(properties, required...)
 }
 
-func withWorktree(handler func(context.Context, *git.Repo, mcp.Arguments) (string, error)) mcp.Handler {
+func withWorktree(handler func(context.Context, *git.Repo, config.Values, mcp.Arguments) (string, error)) mcp.Handler {
 	return func(ctx context.Context, arguments mcp.Arguments) (string, error) {
 		repo, err := git.OpenWorktree(ctx, arguments.String("worktree_path"))
 		if err != nil {
 			return "", err
 		}
-		return handler(ctx, repo, arguments)
+		values, err := config.Load(repo.Root())
+		if err != nil {
+			return "", err
+		}
+		return handler(ctx, repo, values, arguments)
 	}
 }
 
@@ -96,12 +100,12 @@ func repositoryContext(ctx context.Context, repo *git.Repo) (string, error) {
 	return jsonutil.Compact(repoContext.Map())
 }
 
-func gitLabMergeRequestContext(ctx context.Context, repo *git.Repo) (string, error) {
+func gitLabMergeRequestContext(ctx context.Context, repo *git.Repo, values config.Values) (string, error) {
 	repoContext, err := repo.Context(ctx)
 	if err != nil {
 		return "", err
 	}
-	client, err := gitlab.FromEnv()
+	client, err := gitlab.FromValues(values)
 	if err != nil {
 		return "", err
 	}
@@ -114,8 +118,8 @@ func gitLabMergeRequestContext(ctx context.Context, repo *git.Repo) (string, err
 
 // jenkinsStatus reports on an explicit build URL, or on the build that the
 // current commit published as a GitLab commit status.
-func jenkinsStatus(ctx context.Context, repo *git.Repo, buildURL string) (string, error) {
-	client, err := jenkins.FromEnv()
+func jenkinsStatus(ctx context.Context, repo *git.Repo, values config.Values, buildURL string) (string, error) {
+	client, err := jenkins.FromValues(values)
 	if err != nil {
 		return "", err
 	}
@@ -127,7 +131,7 @@ func jenkinsStatus(ctx context.Context, repo *git.Repo, buildURL string) (string
 	result := map[string]any{"repository": repoContext.Map()}
 	buildURL = strings.TrimSpace(buildURL)
 	if buildURL == "" {
-		if buildURL, err = resolveBuildFromGitLab(ctx, repoContext, result); err != nil {
+		if buildURL, err = resolveBuildFromGitLab(ctx, repoContext, values, result); err != nil {
 			return "", err
 		}
 	} else {
@@ -148,16 +152,16 @@ func jenkinsStatus(ctx context.Context, repo *git.Repo, buildURL string) (string
 
 // resolveBuildFromGitLab finds the build URL for the checked out commit and
 // records the GitLab context it found along the way.
-func resolveBuildFromGitLab(ctx context.Context, repoContext git.Context, result map[string]any) (string, error) {
-	client, err := gitlab.FromEnv()
+func resolveBuildFromGitLab(ctx context.Context, repoContext git.Context, values config.Values, result map[string]any) (string, error) {
+	client, err := gitlab.FromValues(values)
 	if err != nil {
 		return "", err
 	}
-	project := config.ValueOr(repoContext.Project, "GITLAB_PROJECT_ID")
+	project := values.ValueOr(repoContext.Project, "GITLAB_PROJECT_ID")
 	if project == "" {
 		return "", fmt.Errorf("no GitLab project found for the origin remote; set GITLAB_PROJECT_ID")
 	}
-	buildURL, status, err := client.CommitStatus(ctx, project, repoContext.Commit, jenkins.BuildStatusName())
+	buildURL, status, err := client.CommitStatus(ctx, project, repoContext.Commit, jenkins.BuildStatusName(values))
 	if err != nil {
 		return "", err
 	}
@@ -173,8 +177,8 @@ func resolveBuildFromGitLab(ctx context.Context, repoContext git.Context, result
 	return buildURL, nil
 }
 
-func jiraTicket(ctx context.Context, repo *git.Repo, ticket string) (string, error) {
-	client, err := jira.FromEnv()
+func jiraTicket(ctx context.Context, repo *git.Repo, values config.Values, ticket string) (string, error) {
+	client, err := jira.FromValues(values)
 	if err != nil {
 		return "", err
 	}
@@ -185,7 +189,7 @@ func jiraTicket(ctx context.Context, repo *git.Repo, ticket string) (string, err
 	return jsonutil.Compact(issue)
 }
 
-func sonarIssues(ctx context.Context, repo *git.Repo, branch string) (string, error) {
+func sonarIssues(ctx context.Context, repo *git.Repo, values config.Values, branch string) (string, error) {
 	if strings.TrimSpace(branch) == "" {
 		current, err := repo.CurrentBranch(ctx)
 		if err != nil {
@@ -195,7 +199,7 @@ func sonarIssues(ctx context.Context, repo *git.Repo, branch string) (string, er
 			return "", fmt.Errorf("no active Git branch; pass a SonarQube branch name")
 		}
 	}
-	client, err := sonar.FromEnv()
+	client, err := sonar.FromValues(values)
 	if err != nil {
 		return "", err
 	}

@@ -73,19 +73,19 @@ func New(options Options) (*Client, error) {
 	}, nil
 }
 
-// FromEnv builds a client from SONAR_HOST_URL (or SONARQUBE_CLI_SERVER),
+// FromValues builds a client from SONAR_HOST_URL (or SONARQUBE_CLI_SERVER),
 // SONAR_TOKEN (or SONARQUBE_CLI_TOKEN), SONAR_PROJECT_KEY, and the optional
 // SONAR_BRANCH_PREFIX.
-func FromEnv() (*Client, error) {
-	baseURL, err := config.Require("SONAR_HOST_URL", "SONARQUBE_CLI_SERVER")
+func FromValues(values config.Values) (*Client, error) {
+	baseURL, err := values.Require("SONAR_HOST_URL", "SONARQUBE_CLI_SERVER")
 	if err != nil {
 		return nil, err
 	}
-	token, err := config.Require("SONAR_TOKEN", "SONARQUBE_CLI_TOKEN")
+	token, err := values.Require("SONAR_TOKEN", "SONARQUBE_CLI_TOKEN")
 	if err != nil {
 		return nil, err
 	}
-	projectKey, err := config.Require("SONAR_PROJECT_KEY")
+	projectKey, err := values.Require("SONAR_PROJECT_KEY")
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func FromEnv() (*Client, error) {
 		BaseURL:      baseURL,
 		Token:        token,
 		ProjectKey:   projectKey,
-		BranchPrefix: config.Value("SONAR_BRANCH_PREFIX"),
+		BranchPrefix: values.Value("SONAR_BRANCH_PREFIX"),
 	})
 }
 

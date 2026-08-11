@@ -62,6 +62,13 @@ func TestOpenWorktreeDefaultsToCurrentDirectory(t *testing.T) {
 	}
 }
 
+func TestOpenWorktreeRejectsMissingConfiguredDirectory(t *testing.T) {
+	t.Setenv(RootVariable, filepath.Join(t.TempDir(), "missing"))
+	if _, err := OpenWorktree(context.Background(), ""); err == nil {
+		t.Fatal("OpenWorktree accepted a missing configured directory")
+	}
+}
+
 func TestOpenWorktreeUsesSelectedLinkedWorktree(t *testing.T) {
 	mainRoot := testRepository(t)
 	worktreeRoot := filepath.Join(t.TempDir(), "feature")

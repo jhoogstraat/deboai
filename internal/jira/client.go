@@ -80,26 +80,26 @@ func New(options Options) (*Client, error) {
 	}, nil
 }
 
-// FromEnv builds a client from JIRA_URL and JIRA_API_TOKEN, plus the optional
+// FromValues builds a client from JIRA_URL and JIRA_API_TOKEN, plus the optional
 // JIRA_API_PATH, JIRA_BROWSE_PATH, JIRA_COOKIE, JIRA_ATTACHMENT_DIR, and
 // JIRA_STATUS_NAMES settings.
-func FromEnv() (*Client, error) {
-	baseURL, err := config.Require("JIRA_URL")
+func FromValues(values config.Values) (*Client, error) {
+	baseURL, err := values.Require("JIRA_URL")
 	if err != nil {
 		return nil, err
 	}
-	token, err := config.Require("JIRA_API_TOKEN")
+	token, err := values.Require("JIRA_API_TOKEN")
 	if err != nil {
 		return nil, err
 	}
 	return New(Options{
 		BaseURL:       baseURL,
-		APIPath:       config.Value("JIRA_API_PATH"),
-		BrowsePath:    config.Value("JIRA_BROWSE_PATH"),
+		APIPath:       values.Value("JIRA_API_PATH"),
+		BrowsePath:    values.Value("JIRA_BROWSE_PATH"),
 		Token:         token,
-		Cookie:        config.Value("JIRA_COOKIE"),
-		AttachmentDir: config.Value("JIRA_ATTACHMENT_DIR"),
-		StatusNames:   config.Pairs("JIRA_STATUS_NAMES"),
+		Cookie:        values.Value("JIRA_COOKIE"),
+		AttachmentDir: values.Value("JIRA_ATTACHMENT_DIR"),
+		StatusNames:   values.Pairs("JIRA_STATUS_NAMES"),
 	})
 }
 
