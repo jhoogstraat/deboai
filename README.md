@@ -37,7 +37,7 @@ go build -o bin/deboai ./cmd/deboai
 
 ## Configure
 
-The server reads its credentials from the environment, falling back to `.env` and `debo.env` in the repository it inspects. Variables already set in the environment always win. Copy [configs/example.env](configs/example.env) as a starting point:
+For every tool call, the server reads credentials from the process environment and then `.env` and `debo.env` in the requested repository. Process values always win; repository files never modify the server process. Copy [configs/example.env](configs/example.env) as a starting point:
 
 ```sh
 cp configs/example.env /path/to/your/repo/.env
@@ -54,11 +54,11 @@ Each integration is configured independently, and only fails the tool that needs
 
 `SONARQUBE_CLI_SERVER` and `SONARQUBE_CLI_TOKEN` are accepted as aliases for the SonarQube host and token.
 
-Two settings control the server itself: `DEBOAI_REPOSITORY_ROOT` pins the repository to inspect (otherwise it is discovered from the working directory), and `DEBOAI_ENV_FILE` overrides which environment files are loaded.
+`DEBOAI_REPOSITORY_ROOT` sets the default repository when the server starts elsewhere, and `DEBOAI_ENV_FILE` overrides which environment files are loaded. Every tool also accepts an optional `repository_root` path (a worktree root or any directory inside it), which overrides the default so one long-lived server can inspect multiple worktrees without changing its process directory.
 
 ## Run
 
-The server speaks JSON-RPC over stdio and must start inside the repository it reports on. It defaults to MCP protocol revision `2026-07-28`, negotiating down to `2025-06-18`, `2025-03-26`, or `2024-11-05` for clients that request one of those. Register it with your assistant, for example in `.mcp.json`:
+The server speaks JSON-RPC over stdio. Calls without `repository_root` inspect `DEBOAI_REPOSITORY_ROOT`, when set, otherwise the repository containing the directory where it started. It defaults to MCP protocol revision `2026-07-28`, negotiating down to `2025-06-18`, `2025-03-26`, or `2024-11-05` for clients that request one of those. Register it with your assistant, for example in `.mcp.json`:
 
 ```json
 {

@@ -6,9 +6,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
-	"github.com/jhoogstraat/deboai/internal/config"
-	"github.com/jhoogstraat/deboai/internal/git"
 	"github.com/jhoogstraat/deboai/internal/mcp"
 	"github.com/jhoogstraat/deboai/internal/tools"
 )
@@ -29,18 +28,15 @@ func main() {
 }
 
 func run() error {
-	root, err := git.DiscoverRoot()
+	workingDirectory, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	if err := config.LoadEnvFiles(root); err != nil {
-		return err
-	}
-	if err := os.Chdir(root); err != nil {
-		return fmt.Errorf("change to repository root: %w", err)
+	if configured := strings.TrimSpace(os.Getenv("DEBOAI_REPOSITORY_ROOT")); configured != "" {
+		workingDirectory = configured
 	}
 
 	info := mcp.Info{Name: serverName, Version: version, Instructions: instructions}
-	server := mcp.NewServer(info, tools.All(git.Open(root))...)
+	server := mcp.NewServer(info, tools.All(workingDirectory)...)
 	return server.Serve(context.Background(), os.Stdin, os.Stdout)
 }

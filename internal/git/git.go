@@ -6,18 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/jhoogstraat/deboai/internal/config"
 	"github.com/jhoogstraat/deboai/internal/jsonutil"
 )
-
-// RootVariable pins the repository the server inspects instead of discovering
-// it from the working directory.
-const RootVariable = "DEBOAI_REPOSITORY_ROOT"
 
 // Repo runs git commands inside a single repository.
 type Repo struct {
@@ -34,20 +28,11 @@ func (r *Repo) Root() string {
 	return r.root
 }
 
-// DiscoverRoot resolves the repository root from RootVariable, falling back to
-// the git repository containing the working directory.
-func DiscoverRoot() (string, error) {
-	if configured := config.Value(RootVariable); configured != "" {
-		path, err := filepath.Abs(configured)
-		if err != nil {
-			return "", fmt.Errorf("resolve %s: %w", RootVariable, err)
-		}
-		return path, nil
-	}
-
-	workingDirectory, err := os.Getwd()
+// DiscoverRoot resolves the Git repository containing directory.
+func DiscoverRoot(directory string) (string, error) {
+	workingDirectory, err := filepath.Abs(directory)
 	if err != nil {
-		return "", fmt.Errorf("get working directory: %w", err)
+		return "", fmt.Errorf("resolve working directory: %w", err)
 	}
 	command := exec.Command("git", "rev-parse", "--show-toplevel")
 	command.Dir = workingDirectory
@@ -143,14 +128,6 @@ func (r *Repo) Context(ctx context.Context) (Context, error) {
 	if err != nil {
 		return Context{}, fmt.Errorf("resolve repository root: %w", err)
 	}
-	workingDirectory, err := os.Getwd()
-	if err != nil {
-		return Context{}, fmt.Errorf("get working directory: %w", err)
-	}
-	cwdPath, err := filepath.Abs(workingDirectory)
-	if err != nil {
-		return Context{}, fmt.Errorf("resolve working directory: %w", err)
-	}
 	host, project := RemoteParts(r.optional(ctx, "remote", "get-url", "origin"))
 
 	return Context{
@@ -160,7 +137,7 @@ func (r *Repo) Context(ctx context.Context) (Context, error) {
 		Upstream:   r.optional(ctx, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"),
 		Commit:     commit,
 		Root:       rootPath,
-		Cwd:        cwdPath,
+		Cwd:        rootPath,
 		Dirty:      status != "",
 	}, nil
 }
