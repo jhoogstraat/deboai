@@ -74,7 +74,7 @@ func toolSchema(properties map[string]any, required ...string) map[string]any {
 	if properties == nil {
 		properties = map[string]any{}
 	}
-	properties["worktree_path"] = mcp.StringProperty("Optional path to a Git worktree. Omit it to use the current working directory.")
+	properties["worktree_path"] = mcp.StringProperty("Optional path to a Git worktree. Omit it to use DEBOAI_REPOSITORY_ROOT or the current working directory.")
 	return mcp.ObjectSchema(properties, required...)
 }
 
