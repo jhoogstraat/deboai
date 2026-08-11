@@ -1,5 +1,4 @@
-// Package tools wires the development tool clients into the MCP tools exposed
-// by the server.
+// Package tools defines and implements the repository development tools.
 package tools
 
 import (
@@ -14,73 +13,98 @@ import (
 	"github.com/jhoogstraat/deboai/internal/jenkins"
 	"github.com/jhoogstraat/deboai/internal/jira"
 	"github.com/jhoogstraat/deboai/internal/jsonutil"
-	"github.com/jhoogstraat/deboai/internal/mcp"
 	"github.com/jhoogstraat/deboai/internal/sonar"
 )
 
+// Arguments holds the validated string arguments of a tool call.
+type Arguments map[string]string
+
+// String returns the argument, or the empty string when it was omitted.
+func (a Arguments) String(name string) string {
+	return a[name]
+}
+
+// Handler runs a tool and returns its compact JSON result.
+type Handler func(ctx context.Context, arguments Arguments) (string, error)
+
+// Argument describes one accepted tool argument.
+type Argument struct {
+	Name        string
+	Description string
+	Required    bool
+}
+
+// Definition describes a callable tool independently of its CLI or MCP adapter.
+type Definition struct {
+	Name        string
+	Description string
+	Arguments   []Argument
+	Handler     Handler
+}
+
+var worktreeArgument = Argument{
+	Name:        "worktree_path",
+	Description: "Optional path to a Git worktree. Omit it to use DEBOAI_REPOSITORY_ROOT or the current working directory.",
+}
+
 // All returns every tool. The worktree is resolved for each call so callers
-// can switch worktrees without changing server state.
-func All() []mcp.Tool {
-	return []mcp.Tool{
+// can switch worktrees without changing process state.
+func All() []Definition {
+	return []Definition{
 		{
 			Name:        "repository_context",
 			Description: "Return the selected local Git worktree and checkout context.",
-			InputSchema: toolSchema(nil),
-			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, _ config.Values, _ mcp.Arguments) (string, error) {
+			Arguments:   []Argument{worktreeArgument},
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, _ config.Values, _ Arguments) (string, error) {
 				return repositoryContext(ctx, repo)
 			}),
 		},
 		{
 			Name:        "code_review_context",
 			Description: "Return the selected worktree's matching GitLab merge request and latest actionable review comment, when available.",
-			InputSchema: toolSchema(nil),
-			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, _ mcp.Arguments) (string, error) {
+			Arguments:   []Argument{worktreeArgument},
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, _ Arguments) (string, error) {
 				return gitLabMergeRequestContext(ctx, repo, values)
 			}),
 		},
 		{
 			Name:        "jenkins_status",
 			Description: "Return Jenkins build status, removed-report state, and actionable stage or test failures.",
-			InputSchema: toolSchema(map[string]any{
-				"build_url": mcp.StringProperty("Optional Jenkins build URL. Omit it to inspect the active commit."),
-			}),
-			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments mcp.Arguments) (string, error) {
+			Arguments: []Argument{
+				{Name: "build_url", Description: "Optional Jenkins build URL. Omit it to inspect the active commit."},
+				worktreeArgument,
+			},
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments Arguments) (string, error) {
 				return jenkinsStatus(ctx, repo, values, arguments.String("build_url"))
 			}),
 		},
 		{
 			Name:        "jira_ticket",
 			Description: "Return compact Jira issue context and download image attachments.",
-			InputSchema: toolSchema(map[string]any{
-				"ticket": mcp.StringProperty("Jira issue key, for example ABC-123."),
-			}, "ticket"),
-			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments mcp.Arguments) (string, error) {
+			Arguments: []Argument{
+				{Name: "ticket", Description: "Jira issue key, for example ABC-123.", Required: true},
+				worktreeArgument,
+			},
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments Arguments) (string, error) {
 				return jiraTicket(ctx, repo, values, arguments.String("ticket"))
 			}),
 		},
 		{
 			Name:        "sonar_issues",
 			Description: "Return failed quality-gate conditions, actionable new-code coverage lines, and confirmed/open SonarQube issues.",
-			InputSchema: toolSchema(map[string]any{
-				"branch": mcp.StringProperty("Optional Git branch name. Omit it to use the current branch."),
-			}),
-			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments mcp.Arguments) (string, error) {
+			Arguments: []Argument{
+				{Name: "branch", Description: "Optional Git branch name. Omit it to use the current branch."},
+				worktreeArgument,
+			},
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments Arguments) (string, error) {
 				return sonarIssues(ctx, repo, values, arguments.String("branch"))
 			}),
 		},
 	}
 }
 
-func toolSchema(properties map[string]any, required ...string) map[string]any {
-	if properties == nil {
-		properties = map[string]any{}
-	}
-	properties["worktree_path"] = mcp.StringProperty("Optional path to a Git worktree. Omit it to use DEBOAI_REPOSITORY_ROOT or the current working directory.")
-	return mcp.ObjectSchema(properties, required...)
-}
-
-func withWorktree(handler func(context.Context, *git.Repo, config.Values, mcp.Arguments) (string, error)) mcp.Handler {
-	return func(ctx context.Context, arguments mcp.Arguments) (string, error) {
+func withWorktree(handler func(context.Context, *git.Repo, config.Values, Arguments) (string, error)) Handler {
+	return func(ctx context.Context, arguments Arguments) (string, error) {
 		repo, err := git.OpenWorktree(ctx, arguments.String("worktree_path"))
 		if err != nil {
 			return "", err

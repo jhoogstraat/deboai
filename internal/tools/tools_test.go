@@ -10,7 +10,6 @@ import (
 
 	"github.com/jhoogstraat/deboai/internal/config"
 	"github.com/jhoogstraat/deboai/internal/git"
-	"github.com/jhoogstraat/deboai/internal/mcp"
 )
 
 func TestAllExposesTheDocumentedTools(t *testing.T) {
@@ -22,11 +21,7 @@ func TestAllExposesTheDocumentedTools(t *testing.T) {
 		if tool.Description == "" || tool.Handler == nil {
 			t.Fatalf("tool %q is missing a description or handler", tool.Name)
 		}
-		if tool.InputSchema["additionalProperties"] != false {
-			t.Fatalf("tool %q accepts undeclared arguments", tool.Name)
-		}
-		properties, _ := tool.InputSchema["properties"].(map[string]any)
-		if properties["worktree_path"] == nil {
+		if !hasArgument(tool.Arguments, "worktree_path") {
 			t.Fatalf("tool %q does not accept a worktree path", tool.Name)
 		}
 	}
@@ -35,6 +30,15 @@ func TestAllExposesTheDocumentedTools(t *testing.T) {
 	if !reflect.DeepEqual(names, expected) {
 		t.Fatalf("All() = %#v, want %#v", names, expected)
 	}
+}
+
+func hasArgument(arguments []Argument, name string) bool {
+	for _, argument := range arguments {
+		if argument.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWithWorktreeLoadsEnvDirectoriesConditionally(t *testing.T) {
@@ -61,10 +65,10 @@ func TestWithWorktreeLoadsEnvDirectoriesConditionally(t *testing.T) {
 	t.Setenv(config.EnvFileVariable, "")
 	t.Chdir(workingDirectory)
 
-	handler := withWorktree(func(_ context.Context, _ *git.Repo, values config.Values, _ mcp.Arguments) (string, error) {
+	handler := withWorktree(func(_ context.Context, _ *git.Repo, values config.Values, _ Arguments) (string, error) {
 		return values.Value("DEBOAI_TEST_SELECTED") + "," + values.Value("DEBOAI_TEST_REPOSITORY") + "," + values.Value("DEBOAI_TEST_WORKING"), nil
 	})
-	result, err := handler(context.Background(), mcp.Arguments{"worktree_path": worktree})
+	result, err := handler(context.Background(), Arguments{"worktree_path": worktree})
 	if err != nil {
 		t.Fatal(err)
 	}

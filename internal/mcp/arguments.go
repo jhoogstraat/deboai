@@ -5,22 +5,16 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/jhoogstraat/deboai/internal/tools"
 )
-
-// Arguments holds the validated string arguments of a tool call.
-type Arguments map[string]string
-
-// String returns the argument, or the empty string when it was omitted.
-func (a Arguments) String(name string) string {
-	return a[name]
-}
 
 // decodeArguments validates raw call arguments against a tool's input schema.
 // Every declared property is a string, so unknown, non-string, and missing
 // required arguments are all rejected before the handler runs.
-func decodeArguments(schema map[string]any, raw map[string]json.RawMessage) (Arguments, error) {
+func decodeArguments(schema map[string]any, raw map[string]json.RawMessage) (tools.Arguments, error) {
 	properties, _ := schema["properties"].(map[string]any)
-	arguments := make(Arguments, len(raw))
+	arguments := make(tools.Arguments, len(raw))
 
 	for _, name := range sortedNames(raw) {
 		if _, declared := properties[name]; !declared {

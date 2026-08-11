@@ -3,8 +3,9 @@
 package mcp
 
 import (
-	"context"
 	"encoding/json"
+
+	"github.com/jhoogstraat/deboai/internal/tools"
 )
 
 // CurrentProtocol is the protocol revision this server speaks by default.
@@ -61,7 +62,7 @@ type toolCallResult struct {
 }
 
 // Handler runs a tool and returns the text handed back to the assistant.
-type Handler func(ctx context.Context, arguments Arguments) (string, error)
+type Handler = tools.Handler
 
 // Tool is a single callable exposed through tools/list and tools/call.
 type Tool struct {

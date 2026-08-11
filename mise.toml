@@ -1,11 +1,12 @@
 [tools]
 go = "1.26"
+golangci-lint = "latest"
 
 [tasks.run]
-run = "go run ./cmd/deboai"
+run = "go run ./cmd/debo"
 
 [tasks.test]
 run = "go test ./..."
 
 [tasks.export]
-run = "go build -o bin/deboai ./cmd/deboai"
+run = "go build -o bin/debo ./cmd/debo"

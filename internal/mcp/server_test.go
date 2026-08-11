@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/jhoogstraat/deboai/internal/tools"
 )
 
 func testServer() *Server {
@@ -13,7 +15,7 @@ func testServer() *Server {
 		Tool{
 			Name:        "echo",
 			InputSchema: ObjectSchema(map[string]any{"ticket": StringProperty("issue key")}, "ticket"),
-			Handler: func(_ context.Context, arguments Arguments) (string, error) {
+			Handler: func(_ context.Context, arguments tools.Arguments) (string, error) {
 				return arguments.String("ticket"), nil
 			},
 		},
