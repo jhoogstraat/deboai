@@ -15,7 +15,7 @@ import (
 const EnvFileVariable = "DEBOAI_ENV_FILE"
 
 // defaultEnvFiles are read, in order, from the repository root.
-var defaultEnvFiles = []string{".env", "ci.env"}
+var defaultEnvFiles = []string{".env", "debo.env"}
 
 // LoadEnvFiles reads the repository environment files into the process
 // environment. Variables that are already set are never overwritten, and
