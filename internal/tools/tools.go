@@ -5,6 +5,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/jhoogstraat/deboai/internal/config"
@@ -84,7 +85,18 @@ func withWorktree(handler func(context.Context, *git.Repo, config.Values, mcp.Ar
 		if err != nil {
 			return "", err
 		}
-		values, err := config.Load(repo.Root())
+		roots := make([]string, 0, 3)
+		if strings.TrimSpace(arguments.String("worktree_path")) != "" {
+			roots = append(roots, repo.Root())
+		}
+		if configured := config.Value(git.RootVariable); configured != "" {
+			roots = append(roots, configured)
+		}
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("get working directory: %w", err)
+		}
+		values, err := config.Load(append(roots, workingDirectory)...)
 		if err != nil {
 			return "", err
 		}

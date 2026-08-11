@@ -38,24 +38,27 @@ func TestLoadIgnoresMissingFiles(t *testing.T) {
 	}
 }
 
-func TestLoadFallsBackToWorkingDirectoryEnvFiles(t *testing.T) {
+func TestLoadUsesDirectoriesInOrder(t *testing.T) {
 	worktree := t.TempDir()
+	repositoryRoot := t.TempDir()
 	workingDirectory := t.TempDir()
 	if err := os.WriteFile(filepath.Join(worktree, ".env"), []byte("SELECTED=worktree\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(workingDirectory, ".env"), []byte("SELECTED=working\nFALLBACK=working\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repositoryRoot, ".env"), []byte("SELECTED=repository\nREPOSITORY=repository\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workingDirectory, ".env"), []byte("SELECTED=working\nREPOSITORY=working\nWORKING=working\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(EnvFileVariable, "")
-	t.Chdir(workingDirectory)
 
-	values, err := Load(worktree)
+	values, err := Load(worktree, repositoryRoot, workingDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if values["SELECTED"] != "worktree" || values["FALLBACK"] != "working" {
-		t.Fatalf("Load() = %#v, want worktree values to take precedence with working-directory fallback", values)
+	if values["SELECTED"] != "worktree" || values["REPOSITORY"] != "repository" || values["WORKING"] != "working" {
+		t.Fatalf("Load() = %#v, want worktree, repository, then working-directory precedence", values)
 	}
 }
 

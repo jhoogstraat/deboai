@@ -20,31 +20,24 @@ var defaultEnvFiles = []string{".env", "debo.env"}
 // Values is a request-scoped environment.
 type Values map[string]string
 
-// Load reads the process environment and selected-worktree environment files.
-// When default files are used, files in the server working directory fill in
-// values missing from the selected worktree. Process values take precedence;
-// neither the process environment nor other requests are modified.
-func Load(root string) (Values, error) {
+// Load reads the process environment and environment files from roots in order.
+// Process values and values from earlier roots take precedence; neither the
+// process environment nor other requests are modified.
+func Load(roots ...string) (Values, error) {
 	values := Values{}
 	for _, entry := range os.Environ() {
 		key, value, _ := strings.Cut(entry, "=")
 		values[key] = value
 	}
+	names := defaultEnvFiles
 	if configured := strings.TrimSpace(values[EnvFileVariable]); configured != "" {
-		if err := loadEnvFiles(values, root, filepath.SplitList(configured)); err != nil {
-			return nil, err
+		names = filepath.SplitList(configured)
+	}
+	for _, root := range roots {
+		if strings.TrimSpace(root) == "" {
+			continue
 		}
-		return values, nil
-	}
-	if err := loadEnvFiles(values, root, defaultEnvFiles); err != nil {
-		return nil, err
-	}
-	workingDirectory, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("get working directory: %w", err)
-	}
-	if filepath.Clean(workingDirectory) != filepath.Clean(root) {
-		if err := loadEnvFiles(values, workingDirectory, defaultEnvFiles); err != nil {
+		if err := loadEnvFiles(values, root, names); err != nil {
 			return nil, err
 		}
 	}
