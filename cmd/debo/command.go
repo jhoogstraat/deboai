@@ -91,6 +91,13 @@ func newRootCommand(version string, definitions []tools.Definition, input io.Rea
 			RunE:    runTool("code_review_context", noArguments),
 		},
 		&cobra.Command{
+			Use:     "ci",
+			Short:   "Show CI gate runs for the merge request head",
+			Args:    cobra.NoArgs,
+			Example: "  debo ci",
+			RunE:    runTool("ci_gate_runs", noArguments),
+		},
+		&cobra.Command{
 			Use:     "jenkins [build-url]",
 			Short:   "Show Jenkins build failures",
 			Args:    cobra.MaximumNArgs(1),

@@ -49,9 +49,12 @@ the newest one wins.
 
 ## `jenkins_status`
 
-Without `build_url`, the build is located through the GitLab commit status of
-the selected worktree's checked out commit named by `JENKINS_BUILD_STATUS_NAME` (default `build`),
-and the response also carries `branch`, `commit`, `merge_request`,
+Without `build_url`, the build is located through the GitLab commit status
+named by `JENKINS_BUILD_STATUS_NAME` (default `build`) on the selected merge
+request's current head SHA. When no merge request is selected, it falls back to
+the worktree's checked out commit. This makes the external Jenkins build
+discoverable even when the local checkout is stale. The response also carries
+`branch`, the commit used for lookup, `checkout_commit`, `merge_request`,
 `merge_request_lookup`, and `gitlabStatus`. With an explicit `build_url` those
 fields are `null`, because the build need not belong to the current commit.
 
@@ -60,9 +63,10 @@ fields are `null`, because the build need not belong to the current commit.
   "repository": {},
   "branch": "feature/example",
   "commit": "abc123",
+  "checkout_commit": "def456",
   "merge_request": {},
   "merge_request_lookup": { "project": "acme/example", "source_branch": "…", "selection": "open_preferred", "all_matches": 2, "open_matches": 1, "selected_state": "opened", "reason": "open_merge_request", "related_merge_requests": [] },
-  "gitlabStatus": { "status": "failed", "target_url": "…", "created_at": "…" },
+  "gitlabStatus": { "name": "build", "sha": "abc123", "status": "failed", "target_url": "…", "pipeline_id": 42, "created_at": "…" },
   "build": { "number": 42, "pipelineId": 42, "result": "FAILURE", "building": false, "timestamp": "…", "durationMs": 1000, "url": "…", "description": null },
   "stages": { "failed": [], "notExecuted": [] },
   "tests": { "passCount": 1, "failCount": 1, "skipCount": 0 },
@@ -81,6 +85,29 @@ rerun.
 `merge_request_lookup.reason` is one of `open_merge_request`,
 `matching_non_open_merge_request`, `no_selectable_merge_request`,
 `no_matching_merge_request`, or `detached_head`.
+
+## `ci_gate_runs`
+
+Returns the latest status for every CI gate published through GitLab's
+commit-status API for the selected merge request's current head SHA; it falls
+back to the worktree commit when no merge request is selected. Superseded
+status attempts are omitted. Each record contains the gate name, exact
+commit SHA, current state, run URL, timestamps, and—when GitLab provides
+them—the status ID, pipeline ID, and author. This is the canonical structured
+route for external Jenkins, SonarQube, or other CI systems; merge-request
+comments are intentionally not used to decide CI state.
+
+```json
+{
+  "repository": {},
+  "branch": "feature/example",
+  "commit": "abc123",
+  "checkout_commit": "def456",
+  "merge_request": {},
+  "merge_request_lookup": {},
+  "gates": [{ "source": "gitlab_commit_status", "gate": "build", "commit_sha": "abc123", "state": "failed", "url": "…", "pipeline_id": 42, "created_at": "…" }]
+}
+```
 
 ## `jira_ticket`
 
@@ -106,13 +133,25 @@ Takes an optional `branch`, defaulting to the selected worktree's current branch
 prefixed with `SONAR_BRANCH_PREFIX` (default `origin/`) unless it already
 carries it, and must be a branch SonarQube has analysed.
 
+`SONAR_PROJECT_KEY` is preferred. If it is not configured, the tool examines
+GitLab statuses for the selected merge request's current head SHA and accepts a
+project key only from the `id` parameter of a URL on the configured SonarQube
+host. It refuses missing or ambiguous candidates rather than selecting a bot
+comment or an arbitrary external link.
+
 ```json
 {
+  "projectKey": "acme:example",
+  "projectKeySource": "environment",
   "failedConditions": [{ "status": "ERROR", "metricKey": "new_branch_coverage", "comparator": "LT", "errorThreshold": "70", "actualValue": "50.0" }],
   "coverageFiles": [{ "path": "src/Example.java", "uncoveredLines": [], "partiallyCoveredLines": [{ "line": 42, "conditions": 2, "coveredConditions": 1, "code": "if (enabled) {" }] }],
   "issues": [{ "severity": "CRITICAL", "rule": "go:S123", "component": "…", "message": "…", "lineRange": [4, 6] }]
 }
 ```
+
+When inferred, `projectKeySource` is `gitlab_commit_status` and the response
+also includes the compact `gitlabStatus` that carried the verified same-host
+SonarQube URL.
 
 `coverageFiles` is only populated when a coverage condition actually failed,
 and lists new-code lines only. `issues` covers the new code period and is

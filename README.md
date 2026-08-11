@@ -31,7 +31,8 @@ Run `debo` or `debo --help` to see the command list.
 | --- | --- |
 | `debo repository` | Local Git repository and checkout context. |
 | `debo review` | Matching GitLab merge request and latest actionable review comment, when available. |
-| `debo jenkins [build-url]` | Build result, failed and skipped stages, failing tests, and console highlights. Without a URL, locates the build for the current commit through GitLab. |
+| `debo ci` | Structured GitLab status records for CI gates attached to the selected merge-request head. |
+| `debo jenkins [build-url]` | Build result, failed and skipped stages, failing tests, and console highlights. Without a URL, locates the build for the selected merge-request head or current commit through GitLab. |
 | `debo jira <ticket>` | Compact Jira issue fields, comments, links, and attachments. Image attachments are downloaded into the selected worktree. |
 | `debo sonar [branch]` | Failed quality-gate conditions, uncovered new-code lines, and confirmed or open issues. Defaults to the current branch. |
 
@@ -42,6 +43,7 @@ Examples:
 ```sh
 debo repository
 debo review --worktree ../other-worktree
+debo ci
 debo jenkins https://jenkins.example/job/example/42/
 debo jira ABC-123
 debo sonar feature/example
@@ -81,9 +83,15 @@ Each integration is configured independently and only fails the command that nee
 | GitLab | `GITLAB_API_URL`, `GITLAB_TOKEN` | `GITLAB_IGNORED_REVIEW_AUTHORS`, `GITLAB_PROJECT_ID` |
 | Jenkins | `JENKINS_URL`, `JENKINS_USER`, `JENKINS_API_TOKEN` | `JENKINS_BUILD_STATUS_NAME` |
 | Jira | `JIRA_URL`, `JIRA_API_TOKEN` | `JIRA_API_PATH`, `JIRA_BROWSE_PATH`, `JIRA_COOKIE`, `JIRA_ATTACHMENT_DIR`, `JIRA_STATUS_NAMES` |
-| SonarQube | `SONAR_HOST_URL`, `SONAR_TOKEN`, `SONAR_PROJECT_KEY` | `SONAR_BRANCH_PREFIX` |
+| SonarQube | `SONAR_HOST_URL`, `SONAR_TOKEN` | `SONAR_PROJECT_KEY`, `SONAR_BRANCH_PREFIX` |
 
-`SONARQUBE_CLI_SERVER` and `SONARQUBE_CLI_TOKEN` are accepted as aliases for the SonarQube host and token. `DEBOAI_ENV_FILE`, when set in the process environment, replaces the default `.env` and `debo.env` filenames.
+`SONARQUBE_CLI_SERVER` and `SONARQUBE_CLI_TOKEN` are accepted as aliases for the SonarQube host and token.
+When `SONAR_PROJECT_KEY` is omitted, `sonar_issues` can infer it from the `id`
+parameter of a same-host SonarQube URL published as a GitLab commit status for
+the selected merge request's current head SHA. Set the variable explicitly if
+no such status exists or more than one project key is found.
+
+`DEBOAI_ENV_FILE`, when set in the process environment, replaces the default `.env` and `debo.env` filenames.
 
 ## MCP mode
 
@@ -100,7 +108,7 @@ MCP mode is opt-in and speaks JSON-RPC over stdio. Register it with your assista
 }
 ```
 
-The server exposes the existing `repository_context`, `code_review_context`, `jenkins_status`, `jira_ticket`, and `sonar_issues` tools. Each accepts an optional `worktree_path`, allowing one process to inspect multiple worktrees. The server defaults to MCP protocol revision `2026-07-28`, negotiating down to `2025-06-18`, `2025-03-26`, or `2024-11-05`.
+The server exposes the existing `repository_context`, `code_review_context`, `jenkins_status`, `ci_gate_runs`, `jira_ticket`, and `sonar_issues` tools. Each accepts an optional `worktree_path`, allowing one process to inspect multiple worktrees. The server defaults to MCP protocol revision `2026-07-28`, negotiating down to `2025-06-18`, `2025-03-26`, or `2024-11-05`.
 
 To try it by hand:
 

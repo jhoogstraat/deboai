@@ -16,7 +16,7 @@ func TestRootShowsCLIDefaultHelp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"Usage:", "debo [command]", "jenkins", "jira", "repository", "review", "sonar", "completion", "--mcp"} {
+	for _, expected := range []string{"Usage:", "debo [command]", "ci", "jenkins", "jira", "repository", "review", "sonar", "completion", "--mcp"} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("root help does not contain %q:\n%s", expected, output)
 		}
@@ -57,6 +57,7 @@ func TestCommandsMapPositionalArguments(t *testing.T) {
 	}{
 		{name: "repository", command: []string{"--worktree", "/repo", "repository"}, tool: "repository_context", expected: tools.Arguments{"worktree_path": "/repo"}},
 		{name: "review", command: []string{"review"}, tool: "code_review_context", expected: tools.Arguments{}},
+		{name: "ci", command: []string{"ci"}, tool: "ci_gate_runs", expected: tools.Arguments{}},
 		{name: "jenkins default", command: []string{"jenkins"}, tool: "jenkins_status", expected: tools.Arguments{}},
 		{name: "jenkins URL", command: []string{"jenkins", "https://jenkins.example/job/example/42/"}, tool: "jenkins_status", expected: tools.Arguments{"build_url": "https://jenkins.example/job/example/42/"}},
 		{name: "jira", command: []string{"jira", "ABC-123"}, tool: "jira_ticket", expected: tools.Arguments{"ticket": "ABC-123"}},
@@ -166,7 +167,7 @@ func execute(t *testing.T, arguments []string, input io.Reader, definitions []to
 }
 
 func testDefinitions(called func(string, tools.Arguments)) []tools.Definition {
-	names := []string{"repository_context", "code_review_context", "jenkins_status", "jira_ticket", "sonar_issues"}
+	names := []string{"repository_context", "code_review_context", "jenkins_status", "ci_gate_runs", "jira_ticket", "sonar_issues"}
 	definitions := make([]tools.Definition, 0, len(names))
 	for _, name := range names {
 		name := name

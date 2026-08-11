@@ -271,34 +271,78 @@ func (c *Client) Discussions(ctx context.Context, repo git.Context, mergeRequest
 	}
 }
 
+// CommitStatuses returns compact provenance for the latest status of every
+// gate on a commit. The project is a path or numeric ID. Calling this endpoint
+// with the merge request head SHA is the stable bridge to external CI.
+func (c *Client) CommitStatuses(ctx context.Context, project, commit string) ([]map[string]any, error) {
+	path := "/projects/" + ProjectPath(project) + "/repository/commits/" + url.PathEscape(commit) + "/statuses"
+	statuses := []map[string]any{}
+	for page := 1; ; page++ {
+		query := url.Values{"per_page": {fmt.Sprint(pageSize)}, "page": {fmt.Sprint(page)}}
+		pageStatuses, err := c.requestList(ctx, path, query, "GitLab commit statuses")
+		if err != nil {
+			return nil, err
+		}
+		statuses = append(statuses, pageStatuses...)
+		if len(pageStatuses) < pageSize {
+			break
+		}
+	}
+	compact := make([]map[string]any, 0, len(statuses))
+	for _, status := range statuses {
+		compact = append(compact, CompactCommitStatus(status, commit))
+	}
+	return compact, nil
+}
+
 // CommitStatus returns the target URL and a compact view of the most recent
 // commit status named statusName, which is how a CI build is located for a
 // commit. The project is a path or numeric ID.
 func (c *Client) CommitStatus(ctx context.Context, project, commit, statusName string) (targetURL string, status map[string]any, err error) {
-	path := "/projects/" + ProjectPath(project) + "/repository/commits/" + url.PathEscape(commit) + "/statuses"
-	statuses, err := c.requestList(ctx, path, url.Values{"all": {"true"}, "per_page": {fmt.Sprint(pageSize)}}, "GitLab commit statuses")
+	statuses, err := c.CommitStatuses(ctx, project, commit)
 	if err != nil {
 		return "", nil, err
 	}
 
 	var selected map[string]any
 	for _, candidate := range statuses {
-		if candidate["name"] != statusName || jsonutil.String(candidate["target_url"]) == "" {
+		if candidate["name"] != statusName {
 			continue
 		}
-		if selected == nil || jsonutil.String(candidate["created_at"]) > jsonutil.String(selected["created_at"]) {
-			selected = candidate
+		if selected != nil {
+			return "", nil, fmt.Errorf("multiple current %q commit statuses found for commit %s", statusName, commit)
 		}
+		selected = candidate
 	}
 	if selected == nil {
 		return "", nil, fmt.Errorf("no %q commit status found for commit %s", statusName, commit)
 	}
+	targetURL = jsonutil.String(selected["target_url"])
+	if targetURL == "" {
+		return "", nil, fmt.Errorf("current %q commit status for commit %s has no target URL", statusName, commit)
+	}
+	return targetURL, selected, nil
+}
 
-	status = map[string]any{}
-	for _, key := range []string{"status", "description", "target_url", "created_at", "finished_at"} {
-		if selected[key] != nil {
-			status[key] = selected[key]
+// CompactCommitStatus keeps the identity, target, and timing fields needed to
+// correlate an external CI run without returning GitLab's full status record.
+func CompactCommitStatus(status map[string]any, commit string) map[string]any {
+	compact := map[string]any{}
+	for _, key := range []string{"id", "name", "status", "description", "target_url", "created_at", "started_at", "finished_at", "sha", "ref", "pipeline_id"} {
+		if status[key] != nil {
+			compact[key] = status[key]
 		}
 	}
-	return jsonutil.String(selected["target_url"]), status, nil
+	if compact["sha"] == nil && commit != "" {
+		compact["sha"] = commit
+	}
+	if compact["pipeline_id"] == nil {
+		if pipeline := jsonutil.Map(status["pipeline"]); pipeline != nil && pipeline["id"] != nil {
+			compact["pipeline_id"] = pipeline["id"]
+		}
+	}
+	if author := jsonutil.Map(status["author"]); author != nil && jsonutil.String(author["username"]) != "" {
+		compact["author"] = jsonutil.String(author["username"])
+	}
+	return compact
 }

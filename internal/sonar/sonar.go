@@ -73,19 +73,31 @@ func New(options Options) (*Client, error) {
 	}, nil
 }
 
+// BaseURLFromValues returns the configured SonarQube server URL.
+func BaseURLFromValues(values config.Values) (string, error) {
+	return values.Require("SONAR_HOST_URL", "SONARQUBE_CLI_SERVER")
+}
+
 // FromValues builds a client from SONAR_HOST_URL (or SONARQUBE_CLI_SERVER),
 // SONAR_TOKEN (or SONARQUBE_CLI_TOKEN), SONAR_PROJECT_KEY, and the optional
 // SONAR_BRANCH_PREFIX.
 func FromValues(values config.Values) (*Client, error) {
-	baseURL, err := values.Require("SONAR_HOST_URL", "SONARQUBE_CLI_SERVER")
+	projectKey, err := values.Require("SONAR_PROJECT_KEY")
+	if err != nil {
+		return nil, err
+	}
+	return FromValuesWithProjectKey(values, projectKey)
+}
+
+// FromValuesWithProjectKey builds a client using an explicit project key and the
+// remaining SonarQube settings from request-scoped configuration. It supports
+// callers that securely derived the key from a commit's GitLab status.
+func FromValuesWithProjectKey(values config.Values, projectKey string) (*Client, error) {
+	baseURL, err := BaseURLFromValues(values)
 	if err != nil {
 		return nil, err
 	}
 	token, err := values.Require("SONAR_TOKEN", "SONARQUBE_CLI_TOKEN")
-	if err != nil {
-		return nil, err
-	}
-	projectKey, err := values.Require("SONAR_PROJECT_KEY")
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +107,29 @@ func FromValues(values config.Values) (*Client, error) {
 		ProjectKey:   projectKey,
 		BranchPrefix: values.Value("SONAR_BRANCH_PREFIX"),
 	})
+}
+
+// ProjectKeyFromURL returns a project key only when targetURL points to the
+// configured SonarQube server. This deliberately does not trust an arbitrary
+// URL supplied by an external CI status.
+func ProjectKeyFromURL(baseURL, targetURL string) (string, bool) {
+	base, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return "", false
+	}
+	target, err := url.Parse(strings.TrimSpace(targetURL))
+	if err != nil || target.Scheme == "" || target.Host == "" {
+		return "", false
+	}
+	if !strings.EqualFold(base.Scheme, target.Scheme) || !strings.EqualFold(base.Host, target.Host) {
+		return "", false
+	}
+	basePath := strings.TrimRight(base.EscapedPath(), "/")
+	if basePath != "" && target.EscapedPath() != basePath && !strings.HasPrefix(target.EscapedPath(), basePath+"/") {
+		return "", false
+	}
+	key := strings.TrimSpace(target.Query().Get("id"))
+	return key, key != ""
 }
 
 // BranchName returns the SonarQube branch name for a local branch.
