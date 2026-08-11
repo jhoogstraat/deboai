@@ -13,18 +13,22 @@ import (
 
 const maxReviewBodyLength = 4000
 
-// ReviewContext returns the repository context together with the latest
-// actionable review comment on the open merge request of the current branch.
+// ReviewContext returns the merge request and latest actionable review comment
+// for the current branch when an open merge request exists.
 func (c *Client) ReviewContext(ctx context.Context, repo git.Context) (map[string]any, error) {
+	result := map[string]any{
+		"merge_request": nil,
+		"review":        nil,
+	}
 	if repo.Branch == "" {
-		return nil, fmt.Errorf("the GitLab review context requires a named current branch")
+		return result, nil
 	}
 	mergeRequest, err := c.OpenMergeRequest(ctx, repo)
 	if err != nil {
 		return nil, err
 	}
 	if mergeRequest == nil {
-		return nil, fmt.Errorf("no open GitLab merge request exists for the current branch")
+		return result, nil
 	}
 	username, err := c.CurrentUsername(ctx)
 	if err != nil {
@@ -34,12 +38,9 @@ func (c *Client) ReviewContext(ctx context.Context, repo git.Context) (map[strin
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
-		"repository":    repo.Map(),
-		"branch":        repo.Branch,
-		"merge_request": CompactMergeRequest(mergeRequest),
-		"review":        CompactReview(c.latestReview(discussions, username)),
-	}, nil
+	result["merge_request"] = CompactMergeRequest(mergeRequest)
+	result["review"] = CompactReview(c.latestReview(discussions, username))
+	return result, nil
 }
 
 // CompactMergeRequest reduces a merge request to the fields worth reporting.
