@@ -3,6 +3,7 @@ package gitlab
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -180,13 +181,14 @@ func TestOpenMergeRequestRejectsAmbiguousBranches(t *testing.T) {
 	}
 }
 
-func TestCommitStatusSelectsNewestNamedStatus(t *testing.T) {
-	client := testClient(t, func(writer http.ResponseWriter, _ *http.Request) {
+func TestCommitStatusSelectsNamedCurrentStatus(t *testing.T) {
+	client := testClient(t, func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Query().Has("all") {
+			t.Fatal("CommitStatus() requested superseded statuses")
+		}
 		write(writer, []any{
 			map[string]any{"name": "lint", "target_url": "https://ci.example/lint", "created_at": "2026-01-09"},
-			map[string]any{"name": "build", "target_url": "https://ci.example/1", "created_at": "2026-01-01", "status": "failed"},
-			map[string]any{"name": "build", "target_url": "https://ci.example/2", "created_at": "2026-01-05", "status": "success"},
-			map[string]any{"name": "build", "created_at": "2026-01-08"},
+			map[string]any{"name": "build", "target_url": "https://ci.example/2", "created_at": "2026-01-05", "status": "success", "pipeline": map[string]any{"id": float64(21)}, "author": map[string]any{"username": "jenkins"}},
 		})
 	})
 
@@ -195,11 +197,55 @@ func TestCommitStatusSelectsNewestNamedStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	if targetURL != "https://ci.example/2" {
-		t.Fatalf("CommitStatus() = %q, want the newest build status", targetURL)
+		t.Fatalf("CommitStatus() = %q, want the current build status", targetURL)
 	}
-	expected := map[string]any{"status": "success", "target_url": "https://ci.example/2", "created_at": "2026-01-05"}
+	expected := map[string]any{"name": "build", "status": "success", "target_url": "https://ci.example/2", "created_at": "2026-01-05", "sha": "abc123", "pipeline_id": float64(21), "author": "jenkins"}
 	if !reflect.DeepEqual(status, expected) {
 		t.Fatalf("CommitStatus() status = %#v, want %#v", status, expected)
+	}
+}
+
+func TestCommitStatusesRequestsOnlyLatestGateStates(t *testing.T) {
+	client := testClient(t, func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Query().Has("all") {
+			t.Fatal("CommitStatuses() requested superseded statuses")
+		}
+		write(writer, []any{
+			map[string]any{"name": "build", "status": "success", "target_url": "https://ci.example/build"},
+			map[string]any{"name": "sonar", "status": "failed", "target_url": "https://ci.example/sonar"},
+		})
+	})
+
+	statuses, err := client.CommitStatuses(context.Background(), "acme/example", "abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statuses) != 2 {
+		t.Fatalf("CommitStatuses() returned %d statuses, want one per gate", len(statuses))
+	}
+}
+
+func TestCommitStatusesPaginates(t *testing.T) {
+	requests := 0
+	client := testClient(t, func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		count := pageSize
+		if request.URL.Query().Get("page") == "2" {
+			count = 1
+		}
+		statuses := make([]any, count)
+		for index := range statuses {
+			statuses[index] = map[string]any{"name": fmt.Sprintf("gate-%d", index), "status": "success"}
+		}
+		write(writer, statuses)
+	})
+
+	statuses, err := client.CommitStatuses(context.Background(), "acme/example", "abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statuses) != pageSize+1 || requests != 2 {
+		t.Fatalf("CommitStatuses() returned %d statuses in %d requests", len(statuses), requests)
 	}
 }
 
@@ -209,6 +255,23 @@ func TestCommitStatusWithoutMatchingStatus(t *testing.T) {
 	})
 	if _, _, err := client.CommitStatus(context.Background(), "acme/example", "abc123", "build"); err == nil {
 		t.Fatal("CommitStatus() accepted a commit without a build status")
+	}
+}
+
+func TestCommitStatusRejectsUnusableCurrentStatus(t *testing.T) {
+	for name, statuses := range map[string][]any{
+		"missing target URL": {map[string]any{"name": "build", "status": "failed"}},
+		"ambiguous": {
+			map[string]any{"name": "build", "target_url": "https://ci.example/1"},
+			map[string]any{"name": "build", "target_url": "https://ci.example/2"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := testClient(t, func(writer http.ResponseWriter, _ *http.Request) { write(writer, statuses) })
+			if _, _, err := client.CommitStatus(context.Background(), "acme/example", "abc123", "build"); err == nil {
+				t.Fatalf("CommitStatus() accepted %s", name)
+			}
+		})
 	}
 }
 
