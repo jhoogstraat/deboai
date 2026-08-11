@@ -14,7 +14,8 @@ Every tool answers one question in one call and returns compact JSON — only th
 
 | Tool | Arguments | Returns |
 | --- | --- | --- |
-| `gitlab_review_context` | — | Repository context and the latest actionable review comment on the open merge request of the current branch. |
+| `repository_context` | — | Local Git repository and checkout context. |
+| `code_review_context` | — | Matching GitLab merge request and latest actionable review comment, when available. |
 | `jenkins_status` | `build_url` (optional) | Build result, failed and skipped stages, failing tests, and console highlights. Without `build_url` the build of the current commit is located through its GitLab commit status. |
 | `jira_ticket` | `ticket` (required) | Compact issue fields, comments, links, and attachments. Image attachments are downloaded into the repository. |
 | `sonar_issues` | `branch` (optional) | Failed quality gate conditions, uncovered new-code lines, and confirmed or open issues. Defaults to the current branch. |

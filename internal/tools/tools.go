@@ -22,11 +22,19 @@ import (
 func All(repo *git.Repo) []mcp.Tool {
 	return []mcp.Tool{
 		{
-			Name:        "gitlab_review_context",
-			Description: "Return current repository context and the latest actionable GitLab merge request review context.",
+			Name:        "repository_context",
+			Description: "Return the current local Git repository and checkout context.",
 			InputSchema: mcp.ObjectSchema(nil),
 			Handler: func(ctx context.Context, _ mcp.Arguments) (string, error) {
-				return gitLabReviewContext(ctx, repo)
+				return repositoryContext(ctx, repo)
+			},
+		},
+		{
+			Name:        "code_review_context",
+			Description: "Return the matching GitLab merge request and its latest actionable review comment, when available.",
+			InputSchema: mcp.ObjectSchema(nil),
+			Handler: func(ctx context.Context, _ mcp.Arguments) (string, error) {
+				return gitLabMergeRequestContext(ctx, repo)
 			},
 		},
 		{
@@ -62,7 +70,15 @@ func All(repo *git.Repo) []mcp.Tool {
 	}
 }
 
-func gitLabReviewContext(ctx context.Context, repo *git.Repo) (string, error) {
+func repositoryContext(ctx context.Context, repo *git.Repo) (string, error) {
+	repoContext, err := repo.Context(ctx)
+	if err != nil {
+		return "", err
+	}
+	return jsonutil.Compact(repoContext.Map())
+}
+
+func gitLabMergeRequestContext(ctx context.Context, repo *git.Repo) (string, error) {
 	repoContext, err := repo.Context(ctx)
 	if err != nil {
 		return "", err

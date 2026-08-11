@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jhoogstraat/deboai/internal/git"
@@ -61,6 +62,70 @@ func TestLatestReviewPrefersPositionedUnresolvedNotes(t *testing.T) {
 	latest := client.latestReview(discussions, "me")
 	if latest["body"] != "inline comment" {
 		t.Fatalf("latestReview() = %#v, want the positioned note", latest)
+	}
+}
+
+func TestReviewContextAllowsNoMergeRequest(t *testing.T) {
+	requests := 0
+	client := testClient(t, func(writer http.ResponseWriter, _ *http.Request) {
+		requests++
+		write(writer, []any{})
+	})
+
+	actual, err := client.ReviewContext(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 {
+		t.Fatalf("ReviewContext() made %d requests, want only the merge request lookup", requests)
+	}
+	if actual["merge_request"] != nil || actual["review"] != nil {
+		t.Fatalf("ReviewContext() = %#v, want nil merge request and review", actual)
+	}
+}
+
+func TestReviewContextIncludesAvailableMergeRequestReview(t *testing.T) {
+	client := testClient(t, func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case strings.HasSuffix(request.URL.Path, "/merge_requests"):
+			write(writer, []any{map[string]any{"iid": float64(7), "title": "Add feature", "state": "opened"}})
+		case request.URL.Path == "/user":
+			write(writer, map[string]any{"username": "me"})
+		default:
+			write(writer, []any{map[string]any{
+				"notes": []any{map[string]any{
+					"id": float64(3), "body": "Please fix this", "created_at": "2026-01-01",
+					"author": map[string]any{"username": "reviewer"},
+				}},
+			}})
+		}
+	})
+
+	actual, err := client.ReviewContext(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mergeRequest, _ := actual["merge_request"].(map[string]any)
+	if mergeRequest["iid"] != float64(7) {
+		t.Fatalf("ReviewContext() merge request = %#v", mergeRequest)
+	}
+	review, _ := actual["review"].(map[string]any)
+	if review["body"] != "Please fix this" {
+		t.Fatalf("ReviewContext() review = %#v", review)
+	}
+}
+
+func TestReviewContextAllowsDetachedHead(t *testing.T) {
+	client := testClient(t, func(writer http.ResponseWriter, _ *http.Request) {
+		t.Fatal("ReviewContext() queried GitLab for a detached HEAD")
+	})
+
+	actual, err := client.ReviewContext(context.Background(), git.Context{Project: repo.Project, Commit: repo.Commit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual["merge_request"] != nil || actual["review"] != nil {
+		t.Fatalf("ReviewContext() = %#v, want nil MR data", actual)
 	}
 }
 

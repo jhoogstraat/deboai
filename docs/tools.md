@@ -3,19 +3,39 @@
 Every tool returns a single-line JSON document as its text content. Empty
 values are omitted where noted, so a response only carries what is actionable.
 
-## `gitlab_review_context`
+## `repository_context`
 
-Takes no arguments. Fails when HEAD is detached, when no open merge request
-exists for the branch, or when several do.
+Takes no arguments and always reports the checked-out Git repository. It does
+not require any remote-service configuration.
 
 ```json
 {
-  "repository": { "project": "acme/example", "remote": {}, "worktree": {}, "branch": "…", "upstream": "…", "commit": "…", "dirty": false, "detached": false },
+  "project": "acme/example",
+  "remote": { "host": "gitlab.example", "project": "acme/example" },
+  "worktree": { "root": "…", "cwd": "…", "cwdIsRoot": true },
   "branch": "feature/example",
+  "upstream": "origin/feature/example",
+  "commit": "abc123",
+  "dirty": false,
+  "detached": false
+}
+```
+
+## `code_review_context`
+
+Takes no arguments. When the current branch has an open GitLab merge request,
+it reports that merge request and its latest actionable review comment. It
+fails when several open merge requests exist for the branch.
+
+```json
+{
   "merge_request": { "iid": 7, "title": "…", "state": "opened", "draft": false, "source_branch": "…", "target_branch": "…", "sha": "…", "web_url": "…" },
   "review": { "id": 3, "author": "reviewer", "created_at": "…", "body": "…", "path": "internal/app.go", "line": 12, "position_type": "text", "base_sha": "…", "head_sha": "…", "resolvable": true, "resolved": false }
 }
 ```
+
+When HEAD is detached or the branch has no open merge request, both
+`merge_request` and `review` are `null`.
 
 `review` is `null` when no unresolved comment is left by anyone other than the
 authenticated user and the accounts listed in `GITLAB_IGNORED_REVIEW_AUTHORS`.
