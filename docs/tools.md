@@ -3,10 +3,14 @@
 Every tool returns a single-line JSON document as its text content. Empty
 values are omitted where noted, so a response only carries what is actionable.
 
+Every tool accepts an optional `worktree_path`. When it is omitted, the Git
+worktree containing the server's current working directory is used. When it is
+provided, that path is resolved to its Git worktree root for that call.
+
 ## `repository_context`
 
-Takes no arguments and always reports the checked-out Git repository. It does
-not require any remote-service configuration.
+Takes an optional `worktree_path` and reports that worktree's checkout. It
+does not require any remote-service configuration.
 
 ```json
 {
@@ -23,7 +27,7 @@ not require any remote-service configuration.
 
 ## `code_review_context`
 
-Takes no arguments. When the current branch has an open GitLab merge request,
+When the selected worktree's current branch has an open GitLab merge request,
 it reports that merge request and its latest actionable review comment. It
 fails when several open merge requests exist for the branch.
 
@@ -45,7 +49,7 @@ the newest one wins.
 ## `jenkins_status`
 
 Without `build_url`, the build is located through the GitLab commit status of
-the checked out commit named by `JENKINS_BUILD_STATUS_NAME` (default `build`),
+the selected worktree's checked out commit named by `JENKINS_BUILD_STATUS_NAME` (default `build`),
 and the response also carries `branch`, `commit`, `merge_request`,
 `merge_request_lookup`, and `gitlabStatus`. With an explicit `build_url` those
 fields are `null`, because the build need not belong to the current commit.
@@ -97,7 +101,7 @@ Jira host, and cannot escape the repository root.
 
 ## `sonar_issues`
 
-Takes an optional `branch`, defaulting to the current branch. The name is
+Takes an optional `branch`, defaulting to the selected worktree's current branch. The name is
 prefixed with `SONAR_BRANCH_PREFIX` (default `origin/`) unless it already
 carries it, and must be a branch SonarQube has analysed.
 
