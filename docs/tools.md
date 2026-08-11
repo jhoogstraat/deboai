@@ -3,8 +3,9 @@
 Every tool returns a single-line JSON document as its text content. Empty
 values are omitted where noted, so a response only carries what is actionable.
 
-Every tool accepts an optional `worktree_path`. When it is omitted, the Git
-worktree containing the server's current working directory is used. When it is
+Every MCP tool accepts an optional `worktree_path`; CLI commands expose the
+same selection as `--worktree`. When it is omitted, the Git worktree containing
+the process's current working directory is used. When it is
 provided, that path is resolved to its Git worktree root for that call.
 
 ## `repository_context`
