@@ -37,7 +37,7 @@ go build -o bin/deboai ./cmd/deboai
 
 ## Configure
 
-For every tool call, the server reads credentials from the process environment and then `.env` and `debo.env` in the selected worktree. Process values always win; worktree files never modify the server process. Copy [configs/example.env](configs/example.env) as a starting point:
+For every tool call, the server reads credentials from the process environment and then `.env` and `debo.env` in the selected worktree. When those files are absent or incomplete, the same files in the server working directory fill missing values—useful for uncommitted local credentials. Process values always win; env files never modify the server process. Copy [configs/example.env](configs/example.env) as a starting point:
 
 ```sh
 cp configs/example.env /path/to/your/repo/.env
@@ -54,7 +54,7 @@ Each integration is configured independently, and only fails the tool that needs
 
 `SONARQUBE_CLI_SERVER` and `SONARQUBE_CLI_TOKEN` are accepted as aliases for the SonarQube host and token.
 
-`DEBOAI_REPOSITORY_ROOT` sets the default worktree when `worktree_path` is omitted (otherwise the working directory is used). `DEBOAI_ENV_FILE`, when set in the process environment, always selects the env files to load instead of the worktree defaults.
+`DEBOAI_REPOSITORY_ROOT` sets the default worktree when `worktree_path` is omitted (otherwise the working directory is used). `DEBOAI_ENV_FILE`, when set in the process environment, always selects the env files to load and bypasses the worktree/working-directory defaults.
 
 ## Run
 

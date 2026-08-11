@@ -20,33 +20,48 @@ var defaultEnvFiles = []string{".env", "debo.env"}
 // Values is a request-scoped environment.
 type Values map[string]string
 
-// Load reads the process environment and repository environment files. Process
-// values take precedence; neither the process environment nor other requests
-// are modified.
+// Load reads the process environment and selected-worktree environment files.
+// When default files are used, files in the server working directory fill in
+// values missing from the selected worktree. Process values take precedence;
+// neither the process environment nor other requests are modified.
 func Load(root string) (Values, error) {
 	values := Values{}
 	for _, entry := range os.Environ() {
 		key, value, _ := strings.Cut(entry, "=")
 		values[key] = value
 	}
-	for _, name := range envFiles(values) {
-		path := name
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(root, path)
+	if configured := strings.TrimSpace(values[EnvFileVariable]); configured != "" {
+		if err := loadEnvFiles(values, root, filepath.SplitList(configured)); err != nil {
+			return nil, err
 		}
-		if err := loadEnvFile(values, path); err != nil {
+		return values, nil
+	}
+	if err := loadEnvFiles(values, root, defaultEnvFiles); err != nil {
+		return nil, err
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("get working directory: %w", err)
+	}
+	if filepath.Clean(workingDirectory) != filepath.Clean(root) {
+		if err := loadEnvFiles(values, workingDirectory, defaultEnvFiles); err != nil {
 			return nil, err
 		}
 	}
 	return values, nil
 }
 
-func envFiles(values Values) []string {
-	configured := strings.TrimSpace(values[EnvFileVariable])
-	if configured == "" {
-		return defaultEnvFiles
+func loadEnvFiles(values Values, root string, names []string) error {
+	for _, name := range names {
+		path := name
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, path)
+		}
+		if err := loadEnvFile(values, path); err != nil {
+			return err
+		}
 	}
-	return filepath.SplitList(configured)
+	return nil
 }
 
 func loadEnvFile(values Values, path string) error {

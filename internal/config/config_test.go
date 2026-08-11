@@ -9,6 +9,7 @@ import (
 
 func TestLoadKeepsProcessValuesWithoutMutatingEnvironment(t *testing.T) {
 	root := t.TempDir()
+	t.Chdir(t.TempDir())
 	contents := "# comment\nexport FIRST=one\nSECOND=\"two\"\nTHIRD='three'\nPRESET=file\nnot a pair\n1BAD=value\n"
 	if err := os.WriteFile(filepath.Join(root, ".env"), []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
@@ -34,6 +35,27 @@ func TestLoadKeepsProcessValuesWithoutMutatingEnvironment(t *testing.T) {
 func TestLoadIgnoresMissingFiles(t *testing.T) {
 	if _, err := Load(t.TempDir()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLoadFallsBackToWorkingDirectoryEnvFiles(t *testing.T) {
+	worktree := t.TempDir()
+	workingDirectory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(worktree, ".env"), []byte("SELECTED=worktree\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workingDirectory, ".env"), []byte("SELECTED=working\nFALLBACK=working\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvFileVariable, "")
+	t.Chdir(workingDirectory)
+
+	values, err := Load(worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if values["SELECTED"] != "worktree" || values["FALLBACK"] != "working" {
+		t.Fatalf("Load() = %#v, want worktree values to take precedence with working-directory fallback", values)
 	}
 }
 
