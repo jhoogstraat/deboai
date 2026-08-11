@@ -8,17 +8,17 @@
 
 An opinionated [Model Context Protocol](https://modelcontextprotocol.io) server that gives a coding assistant fast, compact access to the development tools around a Git repository: GitLab merge request reviews, Jenkins build failures, Jira tickets, and SonarQube quality gates.
 
-Every tool answers one question in one call and returns compact JSON — only the parts that are actionable, so the assistant does not spend its context on API envelopes.
+Every tool answers one question in one call and returns compact JSON — only the parts that are actionable, so the assistant does not spend its context on API envelopes. Every tool accepts an optional `worktree_path`; omit it to inspect the current working directory, or pass another Git worktree for that call.
 
 ## Tools
 
 | Tool | Arguments | Returns |
 | --- | --- | --- |
-| `repository_context` | — | Local Git repository and checkout context. |
-| `code_review_context` | — | Matching GitLab merge request and latest actionable review comment, when available. |
-| `jenkins_status` | `build_url` (optional) | Build result, failed and skipped stages, failing tests, and console highlights. Without `build_url` the build of the current commit is located through its GitLab commit status. |
-| `jira_ticket` | `ticket` (required) | Compact issue fields, comments, links, and attachments. Image attachments are downloaded into the repository. |
-| `sonar_issues` | `branch` (optional) | Failed quality gate conditions, uncovered new-code lines, and confirmed or open issues. Defaults to the current branch. |
+| `repository_context` | `worktree_path` (optional) | Local Git repository and checkout context. |
+| `code_review_context` | `worktree_path` (optional) | Matching GitLab merge request and latest actionable review comment, when available. |
+| `jenkins_status` | `build_url` (optional), `worktree_path` (optional) | Build result, failed and skipped stages, failing tests, and console highlights. Without `build_url` the build of the selected worktree's current commit is located through its GitLab commit status. |
+| `jira_ticket` | `ticket` (required), `worktree_path` (optional) | Compact issue fields, comments, links, and attachments. Image attachments are downloaded into the selected worktree. |
+| `sonar_issues` | `branch` (optional), `worktree_path` (optional) | Failed quality gate conditions, uncovered new-code lines, and confirmed or open issues. Defaults to the selected worktree's current branch. |
 
 See [docs/tools.md](docs/tools.md) for the response shapes.
 
@@ -54,7 +54,7 @@ Each integration is configured independently, and only fails the tool that needs
 
 `SONARQUBE_CLI_SERVER` and `SONARQUBE_CLI_TOKEN` are accepted as aliases for the SonarQube host and token.
 
-Two settings control the server itself: `DEBOAI_REPOSITORY_ROOT` pins the repository to inspect (otherwise it is discovered from the working directory), and `DEBOAI_ENV_FILE` overrides which environment files are loaded.
+Two settings control the server itself: `DEBOAI_REPOSITORY_ROOT` pins the default repository to inspect (otherwise it is discovered from the working directory), and `DEBOAI_ENV_FILE` overrides which environment files are loaded.
 
 ## Run
 

@@ -41,6 +41,6 @@ func run() error {
 	}
 
 	info := mcp.Info{Name: serverName, Version: version, Instructions: instructions}
-	server := mcp.NewServer(info, tools.All(git.Open(root))...)
+	server := mcp.NewServer(info, tools.All()...)
 	return server.Serve(context.Background(), os.Stdin, os.Stdout)
 }

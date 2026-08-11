@@ -17,56 +17,74 @@ import (
 	"github.com/jhoogstraat/deboai/internal/sonar"
 )
 
-// All returns every tool, bound to the given repository. Clients are built per
-// call so that a misconfigured integration only fails its own tool.
-func All(repo *git.Repo) []mcp.Tool {
+// All returns every tool. The worktree is resolved for each call so callers
+// can switch worktrees without changing server state.
+func All() []mcp.Tool {
 	return []mcp.Tool{
 		{
 			Name:        "repository_context",
-			Description: "Return the current local Git repository and checkout context.",
-			InputSchema: mcp.ObjectSchema(nil),
-			Handler: func(ctx context.Context, _ mcp.Arguments) (string, error) {
+			Description: "Return the selected local Git worktree and checkout context.",
+			InputSchema: toolSchema(nil),
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, _ mcp.Arguments) (string, error) {
 				return repositoryContext(ctx, repo)
-			},
+			}),
 		},
 		{
 			Name:        "code_review_context",
-			Description: "Return the matching GitLab merge request and its latest actionable review comment, when available.",
-			InputSchema: mcp.ObjectSchema(nil),
-			Handler: func(ctx context.Context, _ mcp.Arguments) (string, error) {
+			Description: "Return the selected worktree's matching GitLab merge request and latest actionable review comment, when available.",
+			InputSchema: toolSchema(nil),
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, _ mcp.Arguments) (string, error) {
 				return gitLabMergeRequestContext(ctx, repo)
-			},
+			}),
 		},
 		{
 			Name:        "jenkins_status",
 			Description: "Return Jenkins build status, removed-report state, and actionable stage or test failures.",
-			InputSchema: mcp.ObjectSchema(map[string]any{
+			InputSchema: toolSchema(map[string]any{
 				"build_url": mcp.StringProperty("Optional Jenkins build URL. Omit it to inspect the active commit."),
 			}),
-			Handler: func(ctx context.Context, arguments mcp.Arguments) (string, error) {
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, arguments mcp.Arguments) (string, error) {
 				return jenkinsStatus(ctx, repo, arguments.String("build_url"))
-			},
+			}),
 		},
 		{
 			Name:        "jira_ticket",
 			Description: "Return compact Jira issue context and download image attachments.",
-			InputSchema: mcp.ObjectSchema(map[string]any{
+			InputSchema: toolSchema(map[string]any{
 				"ticket": mcp.StringProperty("Jira issue key, for example ABC-123."),
 			}, "ticket"),
-			Handler: func(ctx context.Context, arguments mcp.Arguments) (string, error) {
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, arguments mcp.Arguments) (string, error) {
 				return jiraTicket(ctx, repo, arguments.String("ticket"))
-			},
+			}),
 		},
 		{
 			Name:        "sonar_issues",
 			Description: "Return failed quality-gate conditions, actionable new-code coverage lines, and confirmed/open SonarQube issues.",
-			InputSchema: mcp.ObjectSchema(map[string]any{
+			InputSchema: toolSchema(map[string]any{
 				"branch": mcp.StringProperty("Optional Git branch name. Omit it to use the current branch."),
 			}),
-			Handler: func(ctx context.Context, arguments mcp.Arguments) (string, error) {
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, arguments mcp.Arguments) (string, error) {
 				return sonarIssues(ctx, repo, arguments.String("branch"))
-			},
+			}),
 		},
+	}
+}
+
+func toolSchema(properties map[string]any, required ...string) map[string]any {
+	if properties == nil {
+		properties = map[string]any{}
+	}
+	properties["worktree_path"] = mcp.StringProperty("Optional path to a Git worktree. Omit it to use the current working directory.")
+	return mcp.ObjectSchema(properties, required...)
+}
+
+func withWorktree(handler func(context.Context, *git.Repo, mcp.Arguments) (string, error)) mcp.Handler {
+	return func(ctx context.Context, arguments mcp.Arguments) (string, error) {
+		repo, err := git.OpenWorktree(ctx, arguments.String("worktree_path"))
+		if err != nil {
+			return "", err
+		}
+		return handler(ctx, repo, arguments)
 	}
 }
 

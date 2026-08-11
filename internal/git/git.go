@@ -37,27 +37,61 @@ func (r *Repo) Root() string {
 // DiscoverRoot resolves the repository root from RootVariable, falling back to
 // the git repository containing the working directory.
 func DiscoverRoot() (string, error) {
-	if configured := config.Value(RootVariable); configured != "" {
-		path, err := filepath.Abs(configured)
-		if err != nil {
-			return "", fmt.Errorf("resolve %s: %w", RootVariable, err)
+	path, err := defaultWorktreePath()
+	if err != nil {
+		return "", err
+	}
+	return discoverRoot(context.Background(), path)
+}
+
+// OpenWorktree resolves path to its Git worktree root and opens that worktree.
+// An empty path resolves the configured repository or current working directory.
+func OpenWorktree(ctx context.Context, path string) (*Repo, error) {
+	if strings.TrimSpace(path) == "" {
+		var err error
+		if path, err = defaultWorktreePath(); err != nil {
+			return nil, err
 		}
+	}
+	root, err := discoverRoot(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	return Open(root), nil
+}
+
+func defaultWorktreePath() (string, error) {
+	if path := config.Value(RootVariable); path != "" {
 		return path, nil
 	}
-
-	workingDirectory, err := os.Getwd()
+	path, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("get working directory: %w", err)
 	}
-	command := exec.Command("git", "rev-parse", "--show-toplevel")
-	command.Dir = workingDirectory
+	return path, nil
+}
+
+func discoverRoot(ctx context.Context, path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve worktree path: %w", err)
+	}
+	command := exec.CommandContext(ctx, "git", "-C", absolute, "rev-parse", "--show-toplevel")
 	output, err := command.Output()
 	if err != nil {
-		return "", fmt.Errorf("find repository root: %w", err)
+		return "", fmt.Errorf("find repository root for %s: %w", absolute, err)
 	}
 	root := strings.TrimSpace(string(output))
 	if root == "" {
 		return "", errors.New("git returned an empty repository root")
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve repository root: %w", err)
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize repository root: %w", err)
 	}
 	return root, nil
 }
@@ -143,14 +177,6 @@ func (r *Repo) Context(ctx context.Context) (Context, error) {
 	if err != nil {
 		return Context{}, fmt.Errorf("resolve repository root: %w", err)
 	}
-	workingDirectory, err := os.Getwd()
-	if err != nil {
-		return Context{}, fmt.Errorf("get working directory: %w", err)
-	}
-	cwdPath, err := filepath.Abs(workingDirectory)
-	if err != nil {
-		return Context{}, fmt.Errorf("resolve working directory: %w", err)
-	}
 	host, project := RemoteParts(r.optional(ctx, "remote", "get-url", "origin"))
 
 	return Context{
@@ -160,7 +186,7 @@ func (r *Repo) Context(ctx context.Context) (Context, error) {
 		Upstream:   r.optional(ctx, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"),
 		Commit:     commit,
 		Root:       rootPath,
-		Cwd:        cwdPath,
+		Cwd:        rootPath,
 		Dirty:      status != "",
 	}, nil
 }

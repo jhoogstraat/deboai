@@ -3,12 +3,10 @@ package tools
 import (
 	"reflect"
 	"testing"
-
-	"github.com/jhoogstraat/deboai/internal/git"
 )
 
 func TestAllExposesTheDocumentedTools(t *testing.T) {
-	tools := All(git.Open(t.TempDir()))
+	tools := All()
 
 	names := make([]string, 0, len(tools))
 	for _, tool := range tools {
@@ -18,6 +16,10 @@ func TestAllExposesTheDocumentedTools(t *testing.T) {
 		}
 		if tool.InputSchema["additionalProperties"] != false {
 			t.Fatalf("tool %q accepts undeclared arguments", tool.Name)
+		}
+		properties, _ := tool.InputSchema["properties"].(map[string]any)
+		if properties["worktree_path"] == nil {
+			t.Fatalf("tool %q does not accept a worktree path", tool.Name)
 		}
 	}
 
