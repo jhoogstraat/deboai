@@ -53,17 +53,17 @@ func New(options Options) (*Client, error) {
 	}, nil
 }
 
-// FromEnv builds a client from JENKINS_URL, JENKINS_USER, and JENKINS_API_TOKEN.
-func FromEnv() (*Client, error) {
-	baseURL, err := config.Require("JENKINS_URL")
+// FromValues builds a client from JENKINS_URL, JENKINS_USER, and JENKINS_API_TOKEN.
+func FromValues(values config.Values) (*Client, error) {
+	baseURL, err := values.Require("JENKINS_URL")
 	if err != nil {
 		return nil, err
 	}
-	user, err := config.Require("JENKINS_USER")
+	user, err := values.Require("JENKINS_USER")
 	if err != nil {
 		return nil, err
 	}
-	token, err := config.Require("JENKINS_API_TOKEN")
+	token, err := values.Require("JENKINS_API_TOKEN")
 	if err != nil {
 		return nil, err
 	}
@@ -72,8 +72,8 @@ func FromEnv() (*Client, error) {
 
 // BuildStatusName returns the configured GitLab commit status name that carries
 // the Jenkins build URL.
-func BuildStatusName() string {
-	return config.ValueOr(DefaultBuildStatusName, "JENKINS_BUILD_STATUS_NAME")
+func BuildStatusName(values config.Values) string {
+	return values.ValueOr(DefaultBuildStatusName, "JENKINS_BUILD_STATUS_NAME")
 }
 
 // forBuild returns a copy of the client rooted at a single build URL.

@@ -58,21 +58,21 @@ func New(options Options) (*Client, error) {
 	}, nil
 }
 
-// FromEnv builds a client from GITLAB_API_URL, GITLAB_TOKEN, and the optional
+// FromValues builds a client from GITLAB_API_URL, GITLAB_TOKEN, and the optional
 // GITLAB_IGNORED_REVIEW_AUTHORS list.
-func FromEnv() (*Client, error) {
-	baseURL, err := config.Require("GITLAB_API_URL")
+func FromValues(values config.Values) (*Client, error) {
+	baseURL, err := values.Require("GITLAB_API_URL")
 	if err != nil {
 		return nil, err
 	}
-	token, err := config.Require("GITLAB_TOKEN")
+	token, err := values.Require("GITLAB_TOKEN")
 	if err != nil {
 		return nil, err
 	}
 	return New(Options{
 		BaseURL:        baseURL,
 		Token:          token,
-		IgnoredAuthors: config.List("GITLAB_IGNORED_REVIEW_AUTHORS"),
+		IgnoredAuthors: values.List("GITLAB_IGNORED_REVIEW_AUTHORS"),
 	})
 }
 

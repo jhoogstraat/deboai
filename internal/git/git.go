@@ -62,6 +62,13 @@ func OpenWorktree(ctx context.Context, path string) (*Repo, error) {
 
 func defaultWorktreePath() (string, error) {
 	if path := config.Value(RootVariable); path != "" {
+		info, err := os.Stat(path)
+		if err != nil {
+			return "", fmt.Errorf("check %s: %w", RootVariable, err)
+		}
+		if !info.IsDir() {
+			return "", fmt.Errorf("%s is not a directory: %s", RootVariable, path)
+		}
 		return path, nil
 	}
 	path, err := os.Getwd()
