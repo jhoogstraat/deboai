@@ -16,7 +16,8 @@ Every tool answers one question in one call and returns compact JSON — only th
 | --- | --- | --- |
 | `repository_context` | `worktree_path` (optional) | Local Git repository and checkout context. |
 | `code_review_context` | `worktree_path` (optional) | Matching GitLab merge request and latest actionable review comment, when available. |
-| `jenkins_status` | `build_url` (optional), `worktree_path` (optional) | Build result, failed and skipped stages, failing tests, and console highlights. Without `build_url` the build of the selected worktree's current commit is located through its GitLab commit status. |
+| `jenkins_status` | `build_url` (optional), `worktree_path` (optional) | Build result, failed and skipped stages, failing tests, and console highlights. Without `build_url` the build of the selected MR head (or worktree commit when no MR is selected) is located through its GitLab commit status. |
+| `ci_gate_runs` | `worktree_path` (optional) | Structured GitLab commit-status records for each CI gate attached to the selected MR head. |
 | `jira_ticket` | `ticket` (required), `worktree_path` (optional) | Compact issue fields, comments, links, and attachments. Image attachments are downloaded into the selected worktree. |
 | `sonar_issues` | `branch` (optional), `worktree_path` (optional) | Failed quality gate conditions, uncovered new-code lines, and confirmed or open issues. Defaults to the selected worktree's current branch. |
 
@@ -50,9 +51,13 @@ Each integration is configured independently, and only fails the tool that needs
 | GitLab | `GITLAB_API_URL`, `GITLAB_TOKEN` | `GITLAB_IGNORED_REVIEW_AUTHORS`, `GITLAB_PROJECT_ID` |
 | Jenkins | `JENKINS_URL`, `JENKINS_USER`, `JENKINS_API_TOKEN` | `JENKINS_BUILD_STATUS_NAME` |
 | Jira | `JIRA_URL`, `JIRA_API_TOKEN` | `JIRA_API_PATH`, `JIRA_BROWSE_PATH`, `JIRA_COOKIE`, `JIRA_ATTACHMENT_DIR`, `JIRA_STATUS_NAMES` |
-| SonarQube | `SONAR_HOST_URL`, `SONAR_TOKEN`, `SONAR_PROJECT_KEY` | `SONAR_BRANCH_PREFIX` |
+| SonarQube | `SONAR_HOST_URL`, `SONAR_TOKEN` | `SONAR_PROJECT_KEY`, `SONAR_BRANCH_PREFIX` |
 
 `SONARQUBE_CLI_SERVER` and `SONARQUBE_CLI_TOKEN` are accepted as aliases for the SonarQube host and token.
+When `SONAR_PROJECT_KEY` is omitted, `sonar_issues` can infer it from the `id`
+parameter of a same-host SonarQube URL published as a GitLab commit status for
+the selected merge request's current head SHA. Set the variable explicitly if
+no such status exists or more than one project key is found.
 
 `DEBOAI_REPOSITORY_ROOT` sets the default worktree when `worktree_path` is omitted (otherwise the working directory is used). `DEBOAI_ENV_FILE`, when set in the process environment, replaces the default `.env` and `debo.env` filenames at every applicable lookup directory.
 

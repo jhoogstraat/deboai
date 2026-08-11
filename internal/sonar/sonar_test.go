@@ -52,6 +52,22 @@ func TestBranchName(t *testing.T) {
 	}
 }
 
+func TestProjectKeyFromURLRequiresConfiguredSonarHost(t *testing.T) {
+	key, ok := ProjectKeyFromURL("https://sonar.example/sonar", "https://sonar.example/sonar/dashboard?id=acme%3Aexample&pullRequest=7")
+	if !ok || key != "acme:example" {
+		t.Fatalf("ProjectKeyFromURL() = %q, %v", key, ok)
+	}
+	for _, targetURL := range []string{
+		"https://other.example/sonar/dashboard?id=acme%3Aexample",
+		"https://sonar.example/other?id=acme%3Aexample",
+		"https://sonar.example/sonar/dashboard",
+	} {
+		if key, ok := ProjectKeyFromURL("https://sonar.example/sonar", targetURL); ok || key != "" {
+			t.Fatalf("ProjectKeyFromURL(%q) = %q, %v", targetURL, key, ok)
+		}
+	}
+}
+
 func TestIssuesReportsActionableCoverage(t *testing.T) {
 	const branch = "origin/test"
 	sonar := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
