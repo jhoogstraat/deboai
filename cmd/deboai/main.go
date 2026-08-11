@@ -6,8 +6,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/jhoogstraat/deboai/internal/config"
 	"github.com/jhoogstraat/deboai/internal/git"
@@ -42,10 +40,7 @@ func run() error {
 		return fmt.Errorf("change to repository root: %w", err)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	info := mcp.Info{Name: serverName, Version: version, Instructions: instructions}
 	server := mcp.NewServer(info, tools.All(git.Open(root))...)
-	return server.Serve(ctx, os.Stdin, os.Stdout)
+	return server.Serve(context.Background(), os.Stdin, os.Stdout)
 }
