@@ -41,7 +41,6 @@ func TestRemovedReport(t *testing.T) {
 			"result":          "REMOVED",
 			"reportAvailable": false,
 			"url":             buildURL,
-			"message":         removedReportMessage,
 		},
 		"issues": []any{map[string]any{"kind": "build", "message": removedReportMessage}},
 	}
@@ -91,14 +90,11 @@ func TestBuildReportCollectsStageAndTestFailures(t *testing.T) {
 	if build["result"] != "FAILURE" {
 		t.Fatalf("BuildReport() build = %#v, want a FAILURE result", build)
 	}
-	stages, _ := report["stages"].(map[string]any)
-	failed, _ := stages["failed"].([]map[string]any)
-	notExecuted, _ := stages["notExecuted"].([]map[string]any)
-	if len(failed) != 1 || failed[0]["message"] != "tests failed" {
-		t.Fatalf("BuildReport() failed stages = %#v, want the Test stage", failed)
+	if _, ok := report["stages"]; ok {
+		t.Fatalf("BuildReport() duplicated stages outside issues: %#v", report["stages"])
 	}
-	if len(notExecuted) != 1 {
-		t.Fatalf("BuildReport() notExecuted stages = %#v, want the Deploy stage", notExecuted)
+	if build["pipelineId"] != nil || build["building"] != nil {
+		t.Fatalf("BuildReport() kept duplicate build state: %#v", build)
 	}
 
 	issues, _ := report["issues"].([]map[string]any)
@@ -106,9 +102,12 @@ func TestBuildReportCollectsStageAndTestFailures(t *testing.T) {
 	for _, issue := range issues {
 		kinds = append(kinds, issue["kind"].(string))
 	}
-	expected := []string{"stage", "test", "log", "log"}
+	expected := []string{"stage", "stage", "test", "log", "log"}
 	if !reflect.DeepEqual(kinds, expected) {
 		t.Fatalf("BuildReport() issue kinds = %#v, want %#v", kinds, expected)
+	}
+	if issues[0]["name"] != "Test" || issues[1]["name"] != "Deploy" {
+		t.Fatalf("BuildReport() stage issues = %#v", issues[:2])
 	}
 }
 

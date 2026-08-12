@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jhoogstraat/deboai/internal/config"
+	"github.com/jhoogstraat/deboai/internal/confluence"
 	"github.com/jhoogstraat/deboai/internal/git"
 	"github.com/jhoogstraat/deboai/internal/gitlab"
 	"github.com/jhoogstraat/deboai/internal/jenkins"
@@ -88,13 +89,26 @@ func All() []Definition {
 		},
 		{
 			Name:        "jira_ticket",
-			Description: "Return compact Jira issue context and download image attachments.",
+			Description: "Return compact Jira issue context and optionally download one attachment.",
 			Arguments: []Argument{
 				{Name: "ticket", Description: "Jira issue key, for example ABC-123.", Required: true},
+				{Name: "attachment", Description: "Optional attachment ID or exact filename to download."},
 				worktreeArgument,
 			},
 			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments Arguments) (string, error) {
-				return jiraTicket(ctx, repo, values, arguments.String("ticket"))
+				return jiraTicket(ctx, repo, values, arguments.String("ticket"), arguments.String("attachment"))
+			}),
+		},
+		{
+			Name:        "confluence_page",
+			Description: "Return compact Confluence page context by page ID or page URL.",
+			Arguments: []Argument{
+				{Name: "page", Description: "Confluence page ID or supported same-host page URL.", Required: true},
+				{Name: "attachment", Description: "Optional attachment ID or exact filename to download."},
+				worktreeArgument,
+			},
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments Arguments) (string, error) {
+				return confluencePage(ctx, repo, values, arguments.String("page"), arguments.String("attachment"))
 			}),
 		},
 		{
@@ -168,25 +182,22 @@ func jenkinsStatus(ctx context.Context, repo *git.Repo, values config.Values, bu
 	if err != nil {
 		return "", err
 	}
-	repoContext, err := repo.Context(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	result := map[string]any{"repository": repoContext.Map()}
+	result := map[string]any{}
 	buildURL = strings.TrimSpace(buildURL)
 	if buildURL == "" {
-		if buildURL, err = resolveBuildFromGitLab(ctx, repoContext, values, result); err != nil {
+		repoContext, contextErr := repo.Context(ctx)
+		if contextErr != nil {
+			return "", contextErr
+		}
+		selection, selectionErr := selectGitLabCommit(ctx, repoContext, values)
+		if selectionErr != nil {
+			return "", selectionErr
+		}
+		buildURL, _, err = selection.client.CommitStatus(ctx, selection.project, selection.commit, jenkins.BuildStatusName(values))
+		if err != nil {
 			return "", err
 		}
-	} else {
-		// An explicit build URL need not belong to the checked out commit,
-		// so no branch, commit, or merge request context is reported.
-		result["branch"] = nil
-		result["commit"] = nil
-		result["checkout_commit"] = nil
-		result["merge_request"] = nil
-		result["merge_request_lookup"] = nil
+		result["selection"] = selection.Map()
 	}
 
 	report, err := client.BuildReport(ctx, buildURL)
@@ -196,49 +207,57 @@ func jenkinsStatus(ctx context.Context, repo *git.Repo, values config.Values, bu
 	return jsonutil.Compact(jsonutil.Merge(result, report))
 }
 
-// resolveBuildFromGitLab finds the build URL for the selected merge request
-// head, falling back to the checked out commit, and records its provenance.
-func resolveBuildFromGitLab(ctx context.Context, repoContext git.Context, values config.Values, result map[string]any) (string, error) {
+type gitLabCommitSelection struct {
+	client          *gitlab.Client
+	project         string
+	commit          string
+	checkoutCommit  string
+	mergeRequestIid any
+}
+
+func selectGitLabCommit(ctx context.Context, repoContext git.Context, values config.Values) (gitLabCommitSelection, error) {
 	client, err := gitlab.FromValues(values)
 	if err != nil {
-		return "", err
+		return gitLabCommitSelection{}, err
 	}
 	project := values.ValueOr(repoContext.Project, "GITLAB_PROJECT_ID")
 	if project == "" {
-		return "", fmt.Errorf("no GitLab project found for the origin remote; set GITLAB_PROJECT_ID")
+		return gitLabCommitSelection{}, fmt.Errorf("no GitLab project found for the origin remote; set GITLAB_PROJECT_ID")
 	}
-	commit, mergeRequest, lookup, err := mergeRequestCommit(ctx, client, repoContext)
+	mergeRequest, _, err := client.MergeRequestLookup(ctx, repoContext)
 	if err != nil {
-		return "", err
+		return gitLabCommitSelection{}, err
+	}
+	compactMergeRequest := jsonutil.Map(mergeRequest)
+	commit := jsonutil.String(compactMergeRequest["sha"])
+	if commit == "" {
+		commit = repoContext.Commit
 	}
 	if commit == "" {
-		return "", fmt.Errorf("no commit found for the selected GitLab merge request or worktree")
+		return gitLabCommitSelection{}, fmt.Errorf("no commit found for the selected GitLab merge request or worktree")
 	}
-	buildURL, status, err := client.CommitStatus(ctx, project, commit, jenkins.BuildStatusName(values))
-	if err != nil {
-		return "", err
-	}
-	result["branch"] = jsonutil.Nullable(repoContext.Branch)
-	result["commit"] = jsonutil.Nullable(commit)
-	result["checkout_commit"] = jsonutil.Nullable(repoContext.Commit)
-	result["merge_request"] = mergeRequest
-	result["merge_request_lookup"] = lookup
-	result["gitlabStatus"] = status
-	return buildURL, nil
+	return gitLabCommitSelection{
+		client:          client,
+		project:         project,
+		commit:          commit,
+		checkoutCommit:  repoContext.Commit,
+		mergeRequestIid: compactMergeRequest["iid"],
+	}, nil
 }
 
-// mergeRequestCommit returns the selected MR's current head SHA. A local
-// checkout is allowed to be stale, so it is only used when GitLab has no
-// selected MR for the branch.
-func mergeRequestCommit(ctx context.Context, client *gitlab.Client, repoContext git.Context) (string, any, map[string]any, error) {
-	mergeRequest, lookup, err := client.MergeRequestLookup(ctx, repoContext)
-	if err != nil {
-		return "", nil, nil, err
+func (s gitLabCommitSelection) Map() map[string]any {
+	result := map[string]any{
+		"source": "worktree",
+		"commit": s.commit,
 	}
-	if sha := jsonutil.String(jsonutil.Map(mergeRequest)["sha"]); sha != "" {
-		return sha, mergeRequest, lookup, nil
+	if s.checkoutCommit != "" && s.checkoutCommit != s.commit {
+		result["checkoutCommit"] = s.checkoutCommit
 	}
-	return repoContext.Commit, mergeRequest, lookup, nil
+	if s.mergeRequestIid != nil {
+		result["source"] = "merge_request"
+		result["mergeRequestIid"] = s.mergeRequestIid
+	}
+	return jsonutil.RemoveEmpty(result)
 }
 
 // ciGateRuns exposes the structured GitLab records that bridge an MR commit to
@@ -248,22 +267,11 @@ func ciGateRuns(ctx context.Context, repo *git.Repo, values config.Values) (stri
 	if err != nil {
 		return "", err
 	}
-	client, err := gitlab.FromValues(values)
+	selection, err := selectGitLabCommit(ctx, repoContext, values)
 	if err != nil {
 		return "", err
 	}
-	project := values.ValueOr(repoContext.Project, "GITLAB_PROJECT_ID")
-	if project == "" {
-		return "", fmt.Errorf("no GitLab project found for the origin remote; set GITLAB_PROJECT_ID")
-	}
-	commit, mergeRequest, lookup, err := mergeRequestCommit(ctx, client, repoContext)
-	if err != nil {
-		return "", err
-	}
-	if commit == "" {
-		return "", fmt.Errorf("no commit found for the selected GitLab merge request or worktree")
-	}
-	statuses, err := client.CommitStatuses(ctx, project, commit)
+	statuses, err := selection.client.CommitStatuses(ctx, selection.project, selection.commit)
 	if err != nil {
 		return "", err
 	}
@@ -272,23 +280,16 @@ func ciGateRuns(ctx context.Context, repo *git.Repo, values config.Values) (stri
 		gates = append(gates, gateRun(status))
 	}
 	return jsonutil.Compact(map[string]any{
-		"repository":           repoContext.Map(),
-		"branch":               jsonutil.Nullable(repoContext.Branch),
-		"commit":               commit,
-		"checkout_commit":      jsonutil.Nullable(repoContext.Commit),
-		"merge_request":        mergeRequest,
-		"merge_request_lookup": lookup,
-		"gates":                gates,
+		"selection": selection.Map(),
+		"gates":     gates,
 	})
 }
 
 func gateRun(status map[string]any) map[string]any {
 	run := map[string]any{
-		"source":     "gitlab_commit_status",
-		"gate":       status["name"],
-		"commit_sha": status["sha"],
-		"state":      status["status"],
-		"url":        status["target_url"],
+		"gate":  status["name"],
+		"state": status["status"],
+		"url":   status["target_url"],
 	}
 	for _, key := range []string{"id", "description", "pipeline_id", "author", "created_at", "started_at", "finished_at", "ref"} {
 		if status[key] != nil {
@@ -298,16 +299,28 @@ func gateRun(status map[string]any) map[string]any {
 	return run
 }
 
-func jiraTicket(ctx context.Context, repo *git.Repo, values config.Values, ticket string) (string, error) {
+func jiraTicket(ctx context.Context, repo *git.Repo, values config.Values, ticket, attachment string) (string, error) {
 	client, err := jira.FromValues(values)
 	if err != nil {
 		return "", err
 	}
-	issue, err := client.Issue(ctx, ticket, repo.Root())
+	issue, err := client.IssueWithAttachment(ctx, ticket, repo.Root(), attachment)
 	if err != nil {
 		return "", err
 	}
 	return jsonutil.Compact(issue)
+}
+
+func confluencePage(ctx context.Context, repo *git.Repo, values config.Values, page, attachment string) (string, error) {
+	client, err := confluence.FromValues(values)
+	if err != nil {
+		return "", err
+	}
+	result, err := client.PageWithAttachment(ctx, page, repo.Root(), attachment)
+	if err != nil {
+		return "", err
+	}
+	return jsonutil.Compact(result)
 }
 
 func sonarIssues(ctx context.Context, repo *git.Repo, values config.Values, branch string) (string, error) {
@@ -320,7 +333,7 @@ func sonarIssues(ctx context.Context, repo *git.Repo, values config.Values, bran
 			return "", fmt.Errorf("no active Git branch; pass a SonarQube branch name")
 		}
 	}
-	projectKey, source, gitLabStatus, err := sonarProjectKey(ctx, repo, values)
+	projectKey, source, err := sonarProjectKey(ctx, repo, values)
 	if err != nil {
 		return "", err
 	}
@@ -334,62 +347,48 @@ func sonarIssues(ctx context.Context, repo *git.Repo, values config.Values, bran
 	}
 	issues["projectKey"] = projectKey
 	issues["projectKeySource"] = source
-	if gitLabStatus != nil {
-		issues["gitlabStatus"] = gitLabStatus
-	}
 	return jsonutil.Compact(issues)
 }
 
 // sonarProjectKey uses explicit configuration first. When it is absent, it
 // accepts only a Sonar URL on a GitLab status for the selected MR head SHA.
-func sonarProjectKey(ctx context.Context, repo *git.Repo, values config.Values) (string, string, map[string]any, error) {
+func sonarProjectKey(ctx context.Context, repo *git.Repo, values config.Values) (string, string, error) {
 	if projectKey := values.Value("SONAR_PROJECT_KEY"); projectKey != "" {
-		return projectKey, "environment", nil, nil
+		return projectKey, "environment", nil
 	}
 	repoContext, err := repo.Context(ctx)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", err
 	}
 	return sonarProjectKeyFromGitLab(ctx, repoContext, values)
 }
 
-func sonarProjectKeyFromGitLab(ctx context.Context, repoContext git.Context, values config.Values) (string, string, map[string]any, error) {
+func sonarProjectKeyFromGitLab(ctx context.Context, repoContext git.Context, values config.Values) (string, string, error) {
 	baseURL, err := sonar.BaseURLFromValues(values)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", err
 	}
-	gitLabClient, err := gitlab.FromValues(values)
+	selection, err := selectGitLabCommit(ctx, repoContext, values)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", err
 	}
-	project := values.ValueOr(repoContext.Project, "GITLAB_PROJECT_ID")
-	if project == "" {
-		return "", "", nil, fmt.Errorf("no GitLab project found for the origin remote; set GITLAB_PROJECT_ID")
-	}
-	commit, _, _, err := mergeRequestCommit(ctx, gitLabClient, repoContext)
+	statuses, err := selection.client.CommitStatuses(ctx, selection.project, selection.commit)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", err
 	}
-	if commit == "" {
-		return "", "", nil, fmt.Errorf("no commit found for the selected GitLab merge request or worktree")
-	}
-	statuses, err := gitLabClient.CommitStatuses(ctx, project, commit)
-	if err != nil {
-		return "", "", nil, err
-	}
-	candidates := map[string]map[string]any{}
+	candidates := map[string]struct{}{}
 	for _, status := range statuses {
 		if projectKey, ok := sonar.ProjectKeyFromURL(baseURL, jsonutil.String(status["target_url"])); ok {
-			candidates[projectKey] = status
+			candidates[projectKey] = struct{}{}
 		}
 	}
 	if len(candidates) == 1 {
-		for projectKey, status := range candidates {
-			return projectKey, "gitlab_commit_status", status, nil
+		for projectKey := range candidates {
+			return projectKey, "gitlab_commit_status", nil
 		}
 	}
 	if len(candidates) > 1 {
-		return "", "", nil, fmt.Errorf("multiple SonarQube project keys found in GitLab statuses for commit %s; set SONAR_PROJECT_KEY", commit)
+		return "", "", fmt.Errorf("multiple SonarQube project keys found in GitLab statuses for commit %s; set SONAR_PROJECT_KEY", selection.commit)
 	}
-	return "", "", nil, fmt.Errorf("no SonarQube project key found in GitLab statuses for commit %s; set SONAR_PROJECT_KEY", commit)
+	return "", "", fmt.Errorf("no SonarQube project key found in GitLab statuses for commit %s; set SONAR_PROJECT_KEY", selection.commit)
 }

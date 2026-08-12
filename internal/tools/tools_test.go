@@ -14,7 +14,6 @@ import (
 
 	"github.com/jhoogstraat/deboai/internal/config"
 	"github.com/jhoogstraat/deboai/internal/git"
-	"github.com/jhoogstraat/deboai/internal/gitlab"
 )
 
 func TestAllExposesTheDocumentedTools(t *testing.T) {
@@ -31,7 +30,7 @@ func TestAllExposesTheDocumentedTools(t *testing.T) {
 		}
 	}
 
-	expected := []string{"repository_context", "code_review_context", "jenkins_status", "ci_gate_runs", "jira_ticket", "sonar_issues"}
+	expected := []string{"repository_context", "code_review_context", "jenkins_status", "ci_gate_runs", "jira_ticket", "confluence_page", "sonar_issues"}
 	if !reflect.DeepEqual(names, expected) {
 		t.Fatalf("All() = %#v, want %#v", names, expected)
 	}
@@ -90,7 +89,7 @@ func TestWithWorktreeLoadsEnvDirectoriesConditionally(t *testing.T) {
 	}
 }
 
-func TestResolveBuildFromGitLabUsesMergeRequestHeadSHA(t *testing.T) {
+func TestSelectGitLabCommitUsesMergeRequestHeadSHA(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		switch {
@@ -111,43 +110,39 @@ func TestResolveBuildFromGitLabUsesMergeRequestHeadSHA(t *testing.T) {
 	defer server.Close()
 	values := config.Values{"GITLAB_API_URL": server.URL, "GITLAB_TOKEN": "token"}
 
-	result := map[string]any{}
-	buildURL, err := resolveBuildFromGitLab(context.Background(), git.Context{
+	selection, err := selectGitLabCommit(context.Background(), git.Context{
 		Project: "acme/example", Branch: "feature/test", Commit: "local-head",
-	}, values, result)
+	}, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buildURL, _, err := selection.client.CommitStatus(context.Background(), selection.project, selection.commit, "build")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if buildURL != "https://jenkins.example/job/invoice/42/" {
 		t.Fatalf("build URL = %q", buildURL)
 	}
-	if result["commit"] != "mr-head" || result["checkout_commit"] != "local-head" {
-		t.Fatalf("commit provenance = %#v", result)
-	}
-	status, _ := result["gitlabStatus"].(map[string]any)
-	if status["sha"] != "mr-head" || status["name"] != "build" {
-		t.Fatalf("gitlabStatus = %#v", status)
+	expected := map[string]any{"source": "merge_request", "commit": "mr-head", "checkoutCommit": "local-head", "mergeRequestIid": float64(7)}
+	if actual := selection.Map(); !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("selection = %#v, want %#v", actual, expected)
 	}
 }
 
-func TestMergeRequestCommitFallsBackToCheckoutWithoutMergeRequest(t *testing.T) {
+func TestSelectGitLabCommitFallsBackToCheckoutWithoutMergeRequest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(writer).Encode([]any{})
 	}))
 	defer server.Close()
-	client, err := gitlab.New(gitlab.Options{BaseURL: server.URL, Token: "token", HTTPClient: server.Client()})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	commit, mergeRequest, lookup, err := mergeRequestCommit(context.Background(), client, git.Context{
+	values := config.Values{"GITLAB_API_URL": server.URL, "GITLAB_TOKEN": "token"}
+	selection, err := selectGitLabCommit(context.Background(), git.Context{
 		Project: "acme/example", Branch: "feature/test", Commit: "local-head",
-	})
+	}, values)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if commit != "local-head" || mergeRequest != nil || lookup["reason"] != "no_matching_merge_request" {
-		t.Fatalf("mergeRequestCommit() = %q, %#v, %#v", commit, mergeRequest, lookup)
+	if actual := selection.Map(); !reflect.DeepEqual(actual, map[string]any{"source": "worktree", "commit": "local-head"}) {
+		t.Fatalf("selection = %#v", actual)
 	}
 }
 
@@ -178,7 +173,7 @@ func TestSonarProjectKeyFromGitLabUsesMergeRequestHeadStatus(t *testing.T) {
 		"GITLAB_TOKEN":   "token",
 	}
 
-	projectKey, source, status, err := sonarProjectKeyFromGitLab(context.Background(), git.Context{
+	projectKey, source, err := sonarProjectKeyFromGitLab(context.Background(), git.Context{
 		Project: "acme/example", Branch: "feature/test", Commit: "local-head",
 	}, values)
 	if err != nil {
@@ -186,9 +181,6 @@ func TestSonarProjectKeyFromGitLabUsesMergeRequestHeadStatus(t *testing.T) {
 	}
 	if projectKey != "acme:invoice" || source != "gitlab_commit_status" {
 		t.Fatalf("project key = %q from %q", projectKey, source)
-	}
-	if status["sha"] != "mr-head" || status["name"] != "SonarQube" {
-		t.Fatalf("gitlab status = %#v", status)
 	}
 }
 
@@ -215,7 +207,7 @@ func TestSonarProjectKeyFromGitLabRejectsAmbiguousStatuses(t *testing.T) {
 		"GITLAB_TOKEN":   "token",
 	}
 
-	_, _, _, err := sonarProjectKeyFromGitLab(context.Background(), git.Context{
+	_, _, err := sonarProjectKeyFromGitLab(context.Background(), git.Context{
 		Project: "acme/example", Branch: "feature/test", Commit: "local-head",
 	}, values)
 	if err == nil || !strings.Contains(err.Error(), "multiple SonarQube project keys") {
@@ -229,7 +221,7 @@ func TestGateRunNormalizesGitLabCommitStatus(t *testing.T) {
 		"pipeline_id": float64(42), "author": "jenkins", "created_at": "2026-08-11T10:05:00Z",
 	})
 	expected := map[string]any{
-		"source": "gitlab_commit_status", "gate": "build", "commit_sha": "abc123", "state": "failed", "url": "https://jenkins.example/42",
+		"gate": "build", "state": "failed", "url": "https://jenkins.example/42",
 		"pipeline_id": float64(42), "author": "jenkins", "created_at": "2026-08-11T10:05:00Z",
 	}
 	if !reflect.DeepEqual(run, expected) {
