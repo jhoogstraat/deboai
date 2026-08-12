@@ -53,38 +53,28 @@ Without `build_url`, the build is located through the GitLab commit status
 named by `JENKINS_BUILD_STATUS_NAME` (default `build`) on the selected merge
 request's current head SHA. When no merge request is selected, it falls back to
 the worktree's checked out commit. This makes the external Jenkins build
-discoverable even when the local checkout is stale. The response also carries
-`branch`, the commit used for lookup, `checkout_commit`, `merge_request`,
-`merge_request_lookup`, and `gitlabStatus`. With an explicit `build_url` those
-fields are `null`, because the build need not belong to the current commit.
+discoverable even when the local checkout is stale. The compact `selection`
+records whether that commit came from a merge request or the worktree;
+`checkoutCommit` appears only when the local checkout differs from the selected
+merge-request head. With an explicit `build_url`, `selection` is omitted because
+the build need not belong to the current worktree.
 
 ```json
 {
-  "repository": {},
-  "branch": "feature/example",
-  "commit": "abc123",
-  "checkout_commit": "def456",
-  "merge_request": {},
-  "merge_request_lookup": { "project": "acme/example", "source_branch": "…", "selection": "open_preferred", "all_matches": 2, "open_matches": 1, "selected_state": "opened", "reason": "open_merge_request", "related_merge_requests": [] },
-  "gitlabStatus": { "name": "build", "sha": "abc123", "status": "failed", "target_url": "…", "pipeline_id": 42, "created_at": "…" },
-  "build": { "number": 42, "pipelineId": 42, "result": "FAILURE", "building": false, "timestamp": "…", "durationMs": 1000, "url": "…", "description": null },
-  "stages": { "failed": [], "notExecuted": [] },
+  "selection": { "source": "merge_request", "commit": "abc123", "checkoutCommit": "def456", "mergeRequestIid": 7 },
+  "build": { "number": 42, "result": "FAILURE", "timestamp": "…", "durationMs": 1000, "url": "…", "description": null },
   "tests": { "passCount": 1, "failCount": 1, "skipCount": 0 },
-  "issues": [{ "kind": "stage" }, { "kind": "test" }, { "kind": "log" }]
+  "issues": [{ "kind": "stage", "name": "Test", "status": "FAILED" }, { "kind": "stage", "name": "Deploy", "status": "NOT_EXECUTED" }, { "kind": "test" }, { "kind": "log" }]
 }
 ```
 
 `issues` is the flattened, ordered list of everything worth acting on: failed
-stages, failing test cases, and matched console lines. Console output is only
-fetched for builds that are running or did not succeed.
+or unexecuted stages, failing test cases, and matched console lines. Console
+output is only fetched for builds that are running or did not succeed.
 
 When Jenkins has discarded the build record, the response reduces to a
 `REMOVED` build and a single `build` issue explaining that the pipeline needs a
 rerun.
-
-`merge_request_lookup.reason` is one of `open_merge_request`,
-`matching_non_open_merge_request`, `no_selectable_merge_request`,
-`no_matching_merge_request`, or `detached_head`.
 
 ## `ci_gate_runs`
 
@@ -99,13 +89,8 @@ comments are intentionally not used to decide CI state.
 
 ```json
 {
-  "repository": {},
-  "branch": "feature/example",
-  "commit": "abc123",
-  "checkout_commit": "def456",
-  "merge_request": {},
-  "merge_request_lookup": {},
-  "gates": [{ "source": "gitlab_commit_status", "gate": "build", "commit_sha": "abc123", "state": "failed", "url": "…", "pipeline_id": 42, "created_at": "…" }]
+  "selection": { "source": "merge_request", "commit": "abc123", "checkoutCommit": "def456", "mergeRequestIid": 7 },
+  "gates": [{ "gate": "build", "state": "failed", "url": "…", "pipeline_id": 42, "created_at": "…" }]
 }
 ```
 
@@ -177,9 +162,7 @@ comment or an arbitrary external link.
 }
 ```
 
-When inferred, `projectKeySource` is `gitlab_commit_status` and the response
-also includes the compact `gitlabStatus` that carried the verified same-host
-SonarQube URL.
+When inferred, `projectKeySource` is `gitlab_commit_status`.
 
 `coverageFiles` is only populated when a coverage condition actually failed,
 and lists new-code lines only. `issues` covers the new code period and is

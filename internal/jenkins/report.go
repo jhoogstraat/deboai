@@ -77,8 +77,11 @@ func (c *Client) BuildReport(ctx context.Context, buildURL string) (map[string]a
 		highlights = consoleHighlights(string(console))
 	}
 
-	issues := make([]map[string]any, 0, len(failedStages)+len(testFailures)+len(highlights))
+	issues := make([]map[string]any, 0, len(failedStages)+len(notExecutedStages)+len(testFailures)+len(highlights))
 	for _, stage := range failedStages {
+		issues = append(issues, jsonutil.Merge(map[string]any{"kind": "stage"}, stage))
+	}
+	for _, stage := range notExecutedStages {
 		issues = append(issues, jsonutil.Merge(map[string]any{"kind": "stage"}, stage))
 	}
 	for _, failure := range testFailures {
@@ -91,15 +94,12 @@ func (c *Client) BuildReport(ctx context.Context, buildURL string) (map[string]a
 	return map[string]any{
 		"build": map[string]any{
 			"number":      build["number"],
-			"pipelineId":  build["number"],
 			"result":      buildResult(build),
-			"building":    build["building"],
 			"timestamp":   isoTimestamp(build["timestamp"]),
 			"durationMs":  build["duration"],
 			"url":         jsonutil.FirstNonEmpty(build["url"], normalized),
 			"description": jsonutil.Nullable(textutil.Clean(jsonutil.String(build["description"]), maxDescriptionLength)),
 		},
-		"stages": map[string]any{"failed": failedStages, "notExecuted": notExecutedStages},
 		"tests":  testSummary,
 		"issues": issues,
 	}, nil
@@ -112,7 +112,6 @@ func RemovedReport(buildURL string) map[string]any {
 			"result":          "REMOVED",
 			"reportAvailable": false,
 			"url":             buildURL,
-			"message":         removedReportMessage,
 		},
 		"issues": []any{map[string]any{"kind": "build", "message": removedReportMessage}},
 	}
