@@ -22,7 +22,7 @@ const (
 	maxLinks            = 100
 	maxAttachments      = 100
 	maxValueItems       = 20
-	maxScreenshotSize   = 20 * 1024 * 1024
+	maxAttachmentSize   = 20 * 1024 * 1024
 	issueFields         = "assignee,attachment,comment,components,created,creator,description,duedate,environment,fixVersions,issuelinks,issuetype,labels,priority,project,reporter,resolution,resolutiondate,status,summary,updated,versions"
 	attachmentDirectory = "attachments"
 )
@@ -30,6 +30,12 @@ const (
 // Issue returns the compact context of a single issue. Image attachments are
 // downloaded below root, and their repository-relative paths are reported.
 func (c *Client) Issue(ctx context.Context, rawTicket, root string) (map[string]any, error) {
+	return c.IssueWithAttachment(ctx, rawTicket, root, "")
+}
+
+// IssueWithAttachment returns issue context and downloads the selected
+// attachment in addition to the image attachments downloaded by Issue.
+func (c *Client) IssueWithAttachment(ctx context.Context, rawTicket, root, attachmentSelector string) (map[string]any, error) {
 	ticket := strings.ToUpper(strings.TrimSpace(rawTicket))
 	if !TicketPattern.MatchString(ticket) {
 		return nil, fmt.Errorf("invalid Jira ticket key: %s", rawTicket)
@@ -63,7 +69,7 @@ func (c *Client) Issue(ctx context.Context, rawTicket, root string) (map[string]
 		"fixVersions": compactValue(fields["fixVersions"], maxTextLength),
 		"versions":    compactValue(fields["versions"], maxTextLength),
 	}
-	attachments, err := c.compactAttachments(ctx, fields, ticket, root)
+	attachments, err := c.compactAttachments(ctx, fields, ticket, root, attachmentSelector)
 	if err != nil {
 		return nil, err
 	}
@@ -229,23 +235,29 @@ func (c *Client) compactIssueReference(value any) map[string]any {
 	return jsonutil.RemoveEmpty(result)
 }
 
-func (c *Client) compactAttachments(ctx context.Context, fields map[string]any, ticket, root string) ([]any, error) {
+func (c *Client) compactAttachments(ctx context.Context, fields map[string]any, ticket, root, selector string) ([]any, error) {
 	attachments := jsonutil.Array(fields, "attachment")
 	if len(attachments) > maxAttachments {
 		attachments = attachments[:maxAttachments]
 	}
+	selected, err := attachmentIndex(attachments, selector)
+	if err != nil {
+		return nil, err
+	}
 	result := make([]any, 0, len(attachments))
-	for _, rawAttachment := range attachments {
+	for index, rawAttachment := range attachments {
 		attachment := jsonutil.Map(rawAttachment)
 		item := map[string]any{
+			"id":       attachment["id"],
 			"filename": attachment["filename"],
 			"mimeType": attachment["mimeType"],
 			"size":     attachment["size"],
 			"created":  attachment["created"],
 			"url":      attachment["content"],
 		}
-		if strings.HasPrefix(jsonutil.String(attachment["mimeType"]), "image/") {
-			path, err := c.downloadImage(ctx, attachment, ticket, root)
+		image := strings.HasPrefix(jsonutil.String(attachment["mimeType"]), "image/")
+		if image || index == selected {
+			path, err := c.downloadAttachment(ctx, attachment, ticket, root, image)
 			if err != nil {
 				return nil, err
 			}
@@ -256,9 +268,35 @@ func (c *Client) compactAttachments(ctx context.Context, fields map[string]any, 
 	return result, nil
 }
 
-// downloadImage stores an image attachment below root and returns its
-// repository-relative path.
-func (c *Client) downloadImage(ctx context.Context, attachment map[string]any, ticket, root string) (string, error) {
+func attachmentIndex(attachments []any, selector string) (int, error) {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return -1, nil
+	}
+	for index, rawAttachment := range attachments {
+		if jsonutil.FirstText(jsonutil.Map(rawAttachment)["id"]) == selector {
+			return index, nil
+		}
+	}
+	selected := -1
+	for index, rawAttachment := range attachments {
+		if jsonutil.String(jsonutil.Map(rawAttachment)["filename"]) != selector {
+			continue
+		}
+		if selected >= 0 {
+			return -1, fmt.Errorf("multiple Jira attachments are named %s; select by ID", selector)
+		}
+		selected = index
+	}
+	if selected < 0 {
+		return -1, fmt.Errorf("jira attachment not found: %s", selector)
+	}
+	return selected, nil
+}
+
+// downloadAttachment stores an attachment below root and returns its
+// repository-relative path. Automatic image downloads validate the media type.
+func (c *Client) downloadAttachment(ctx context.Context, attachment map[string]any, ticket, root string, requireImage bool) (string, error) {
 	filename := filepath.Base(strings.ReplaceAll(jsonutil.FirstText(attachment["filename"], attachment["id"], "screenshot"), "\x00", ""))
 	if filename == "." || filename == ".." || filename == "" {
 		filename = "attachment-" + fmt.Sprint(attachment["id"])
@@ -276,7 +314,11 @@ func (c *Client) downloadImage(ctx context.Context, attachment map[string]any, t
 		return "", fmt.Errorf("unexpected host in Jira attachment URL: %s", filename)
 	}
 
-	response, err := httpx.Do(ctx, c.http, http.MethodGet, contentURL, c.headers("image/*"), maxScreenshotSize+1)
+	accept := "*/*"
+	if requireImage {
+		accept = "image/*"
+	}
+	response, err := httpx.Do(ctx, c.http, http.MethodGet, contentURL, c.headers(accept), maxAttachmentSize+1)
 	if err != nil {
 		return "", err
 	}
@@ -287,11 +329,11 @@ func (c *Client) downloadImage(ctx context.Context, attachment map[string]any, t
 		return "", httpx.APIError("Jira attachment", response.Status, response.Body)
 	}
 	contentType := strings.ToLower(strings.TrimSpace(strings.Split(response.Header.Get("Content-Type"), ";")[0]))
-	if !strings.HasPrefix(contentType, "image/") {
+	if requireImage && !strings.HasPrefix(contentType, "image/") {
 		return "", fmt.Errorf("the Jira attachment is not an image: %s", filename)
 	}
-	if len(response.Body) > maxScreenshotSize {
-		return "", fmt.Errorf("the Jira attachment is larger than %d bytes: %s", maxScreenshotSize, filename)
+	if len(response.Body) > maxAttachmentSize {
+		return "", fmt.Errorf("the Jira attachment is larger than %d bytes: %s", maxAttachmentSize, filename)
 	}
 
 	relative := filepath.Join(c.attachmentDir, ticket, attachmentDirectory, filename)

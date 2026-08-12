@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jhoogstraat/deboai/internal/config"
+	"github.com/jhoogstraat/deboai/internal/confluence"
 	"github.com/jhoogstraat/deboai/internal/git"
 	"github.com/jhoogstraat/deboai/internal/gitlab"
 	"github.com/jhoogstraat/deboai/internal/jenkins"
@@ -88,13 +89,26 @@ func All() []Definition {
 		},
 		{
 			Name:        "jira_ticket",
-			Description: "Return compact Jira issue context and download image attachments.",
+			Description: "Return compact Jira issue context and optionally download one attachment.",
 			Arguments: []Argument{
 				{Name: "ticket", Description: "Jira issue key, for example ABC-123.", Required: true},
+				{Name: "attachment", Description: "Optional attachment ID or exact filename to download."},
 				worktreeArgument,
 			},
 			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments Arguments) (string, error) {
-				return jiraTicket(ctx, repo, values, arguments.String("ticket"))
+				return jiraTicket(ctx, repo, values, arguments.String("ticket"), arguments.String("attachment"))
+			}),
+		},
+		{
+			Name:        "confluence_page",
+			Description: "Return compact Confluence page context by page ID or page URL.",
+			Arguments: []Argument{
+				{Name: "page", Description: "Confluence page ID or supported same-host page URL.", Required: true},
+				{Name: "attachment", Description: "Optional attachment ID or exact filename to download."},
+				worktreeArgument,
+			},
+			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments Arguments) (string, error) {
+				return confluencePage(ctx, repo, values, arguments.String("page"), arguments.String("attachment"))
 			}),
 		},
 		{
@@ -298,16 +312,28 @@ func gateRun(status map[string]any) map[string]any {
 	return run
 }
 
-func jiraTicket(ctx context.Context, repo *git.Repo, values config.Values, ticket string) (string, error) {
+func jiraTicket(ctx context.Context, repo *git.Repo, values config.Values, ticket, attachment string) (string, error) {
 	client, err := jira.FromValues(values)
 	if err != nil {
 		return "", err
 	}
-	issue, err := client.Issue(ctx, ticket, repo.Root())
+	issue, err := client.IssueWithAttachment(ctx, ticket, repo.Root(), attachment)
 	if err != nil {
 		return "", err
 	}
 	return jsonutil.Compact(issue)
+}
+
+func confluencePage(ctx context.Context, repo *git.Repo, values config.Values, page, attachment string) (string, error) {
+	client, err := confluence.FromValues(values)
+	if err != nil {
+		return "", err
+	}
+	result, err := client.PageWithAttachment(ctx, page, repo.Root(), attachment)
+	if err != nil {
+		return "", err
+	}
+	return jsonutil.Compact(result)
 }
 
 func sonarIssues(ctx context.Context, repo *git.Repo, values config.Values, branch string) (string, error) {

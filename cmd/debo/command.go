@@ -74,6 +74,37 @@ func newRootCommand(version string, definitions []tools.Definition, input io.Rea
 			return err
 		}
 	}
+	var jiraAttachment string
+	jiraCommand := &cobra.Command{
+		Use:     "jira <ticket>",
+		Short:   "Show a Jira ticket and download attachments",
+		Args:    cobra.ExactArgs(1),
+		Example: "  debo jira ABC-123\n  debo jira ABC-123 --attachment notes.txt",
+		RunE: runTool("jira_ticket", func(arguments []string) tools.Arguments {
+			values := tools.Arguments{"ticket": arguments[0]}
+			if jiraAttachment != "" {
+				values["attachment"] = jiraAttachment
+			}
+			return values
+		}),
+	}
+	jiraCommand.Flags().StringVar(&jiraAttachment, "attachment", "", "download one attachment by ID or exact filename")
+
+	var confluenceAttachment string
+	confluenceCommand := &cobra.Command{
+		Use:     "confluence <page-or-url>",
+		Short:   "Show a Confluence page and optionally download an attachment",
+		Args:    cobra.ExactArgs(1),
+		Example: "  debo confluence https://wiki.example/pages/123/Runbook\n  debo confluence 123 --attachment diagram.pdf",
+		RunE: runTool("confluence_page", func(arguments []string) tools.Arguments {
+			values := tools.Arguments{"page": arguments[0]}
+			if confluenceAttachment != "" {
+				values["attachment"] = confluenceAttachment
+			}
+			return values
+		}),
+	}
+	confluenceCommand.Flags().StringVar(&confluenceAttachment, "attachment", "", "download one attachment by ID or exact filename")
 
 	root.AddCommand(
 		&cobra.Command{
@@ -106,15 +137,8 @@ func newRootCommand(version string, definitions []tools.Definition, input io.Rea
 				return optionalArgument("build_url", arguments)
 			}),
 		},
-		&cobra.Command{
-			Use:     "jira <ticket>",
-			Short:   "Show a Jira ticket and download image attachments",
-			Args:    cobra.ExactArgs(1),
-			Example: "  debo jira ABC-123",
-			RunE: runTool("jira_ticket", func(arguments []string) tools.Arguments {
-				return tools.Arguments{"ticket": arguments[0]}
-			}),
-		},
+		jiraCommand,
+		confluenceCommand,
 		&cobra.Command{
 			Use:     "sonar [branch]",
 			Short:   "Show SonarQube quality-gate and code issues",

@@ -80,6 +80,9 @@ func TestIssueDownloadsImageAttachments(t *testing.T) {
 		case "/attachment/1":
 			writer.Header().Set("Content-Type", "image/png")
 			_, _ = writer.Write([]byte("png-bytes"))
+		case "/attachment/2":
+			writer.Header().Set("Content-Type", "text/plain")
+			_, _ = writer.Write([]byte("notes"))
 		default:
 			http.Error(writer, "unexpected endpoint", http.StatusNotFound)
 		}
@@ -118,6 +121,21 @@ func TestIssueDownloadsImageAttachments(t *testing.T) {
 	}
 	if text, _ := attachments[1].(map[string]any); text["localPath"] != nil {
 		t.Fatalf("Issue() downloaded a non-image attachment: %#v", text)
+	}
+
+	issue, err = client.IssueWithAttachment(context.Background(), "abc-1", root, "notes.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, _ = issue["content"].(map[string]any)
+	attachments, _ = content["attachments"].([]any)
+	notes, _ := attachments[1].(map[string]any)
+	expectedPath = filepath.Join(DefaultAttachmentDir, "ABC-1", attachmentDirectory, "notes.txt")
+	if notes["localPath"] != filepath.ToSlash(expectedPath) {
+		t.Fatalf("selected attachment localPath = %#v, want %q", notes["localPath"], expectedPath)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, expectedPath)); err != nil || string(data) != "notes" {
+		t.Fatalf("selected attachment = %q, %v", data, err)
 	}
 }
 

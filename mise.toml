@@ -3,10 +3,10 @@ go = "1.26"
 golangci-lint = "latest"
 
 [tasks.run]
-run = "go run ./cmd/debo"
+run = "go run -ldflags \"-X main.version=$(git describe --tags --always --dirty)\" ./cmd/debo"
 
 [tasks.test]
 run = "go test ./..."
 
 [tasks.export]
-run = "go build -o bin/debo ./cmd/debo"
+run = "go build -ldflags \"-X main.version=$(git describe --tags --always --dirty)\" -o bin/debo ./cmd/debo"

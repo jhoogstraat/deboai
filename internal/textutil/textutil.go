@@ -9,6 +9,7 @@ import (
 )
 
 var markup = regexp.MustCompile(`<[^>]+>`)
+var blockMarkup = regexp.MustCompile(`(?i)<(?:br|hr)\b[^>]*>|</?(?:address|article|aside|blockquote|div|dl|dt|dd|fieldset|figcaption|figure|footer|form|h[1-6]|header|li|main|nav|ol|p|pre|section|table|tbody|thead|tfoot|tr|td|th|ul)\b[^>]*>`)
 
 // StripMarkup removes HTML tags and resolves HTML entities.
 func StripMarkup(value string) string {
@@ -27,6 +28,11 @@ func Clean(value string, limit int) string {
 		}
 	}
 	return Truncate(strings.Join(lines, "\n"), limit)
+}
+
+// CleanHTML converts HTML block boundaries to line breaks before cleaning.
+func CleanHTML(value string, limit int) string {
+	return Clean(blockMarkup.ReplaceAllString(value, "\n"), limit)
 }
 
 // Truncate shortens value to limit bytes, marking cut text with an ellipsis.

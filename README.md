@@ -6,7 +6,7 @@
 
 *dev + boost + ai.*
 
-`debo` gives developers and coding assistants fast, compact access to the tools around a Git repository: GitLab merge request reviews, Jenkins build failures, Jira tickets, and SonarQube quality gates.
+`debo` gives developers and coding assistants fast, compact access to the tools around a Git repository: GitLab merge request reviews, Jenkins build failures, Jira tickets, Confluence pages, and SonarQube quality gates.
 
 Every command answers one question and prints compact JSON containing only actionable data. Use the CLI directly, or start its [Model Context Protocol](https://modelcontextprotocol.io) server with `--mcp`.
 
@@ -33,7 +33,8 @@ Run `debo` or `debo --help` to see the command list.
 | `debo review` | Matching GitLab merge request and latest actionable review comment, when available. |
 | `debo ci` | Structured GitLab status records for CI gates attached to the selected merge-request head. |
 | `debo jenkins [build-url]` | Build result, failed and skipped stages, failing tests, and console highlights. Without a URL, locates the build for the selected merge-request head or current commit through GitLab. |
-| `debo jira <ticket>` | Compact Jira issue fields, comments, links, and attachments. Image attachments are downloaded into the selected worktree. |
+| `debo jira <ticket> [--attachment ID-OR-NAME]` | Compact Jira issue fields, comments, links, and attachments. Images and an explicitly selected attachment are downloaded into the selected worktree. |
+| `debo confluence <page-or-url> [--attachment ID-OR-NAME]` | Compact Confluence page metadata and plain-text body, optionally downloading one attachment into the selected worktree. |
 | `debo sonar [branch]` | Failed quality-gate conditions, uncovered new-code lines, and confirmed or open issues. Defaults to the current branch. |
 
 Every command accepts `--worktree PATH` (or `-w PATH`). Without it, `DEBOAI_REPOSITORY_ROOT` or the current working directory is used.
@@ -46,6 +47,8 @@ debo review --worktree ../other-worktree
 debo ci
 debo jenkins https://jenkins.example/job/example/42/
 debo jira ABC-123
+debo jira ABC-123 --attachment notes.txt
+debo confluence https://wiki.example/pages/123/Runbook --attachment diagram.pdf
 debo sonar feature/example
 ```
 
@@ -83,6 +86,7 @@ Each integration is configured independently and only fails the command that nee
 | GitLab | `GITLAB_API_URL`, `GITLAB_TOKEN` | `GITLAB_IGNORED_REVIEW_AUTHORS`, `GITLAB_PROJECT_ID` |
 | Jenkins | `JENKINS_URL`, `JENKINS_USER`, `JENKINS_API_TOKEN` | `JENKINS_BUILD_STATUS_NAME` |
 | Jira | `JIRA_URL`, `JIRA_API_TOKEN` | `JIRA_API_PATH`, `JIRA_BROWSE_PATH`, `JIRA_COOKIE`, `JIRA_ATTACHMENT_DIR`, `JIRA_STATUS_NAMES` |
+| Confluence | `CONFLUENCE_URL`, `CONFLUENCE_API_TOKEN` | `CONFLUENCE_USER`, `CONFLUENCE_API_PATH`, `CONFLUENCE_COOKIE`, `CONFLUENCE_ATTACHMENT_DIR` |
 | SonarQube | `SONAR_HOST_URL`, `SONAR_TOKEN` | `SONAR_PROJECT_KEY`, `SONAR_BRANCH_PREFIX` |
 
 `SONARQUBE_CLI_SERVER` and `SONARQUBE_CLI_TOKEN` are accepted as aliases for the SonarQube host and token.
@@ -108,7 +112,7 @@ MCP mode is opt-in and speaks JSON-RPC over stdio. Register it with your assista
 }
 ```
 
-The server exposes the existing `repository_context`, `code_review_context`, `jenkins_status`, `ci_gate_runs`, `jira_ticket`, and `sonar_issues` tools. Each accepts an optional `worktree_path`, allowing one process to inspect multiple worktrees. The server defaults to MCP protocol revision `2026-07-28`, negotiating down to `2025-06-18`, `2025-03-26`, or `2024-11-05`.
+The server exposes the existing `repository_context`, `code_review_context`, `jenkins_status`, `ci_gate_runs`, `jira_ticket`, `confluence_page`, and `sonar_issues` tools. Each accepts an optional `worktree_path`, allowing one process to inspect multiple worktrees. The server defaults to MCP protocol revision `2026-07-28`, negotiating down to `2025-06-18`, `2025-03-26`, or `2024-11-05`.
 
 To try it by hand:
 
@@ -127,6 +131,7 @@ internal/mcp      MCP adapter, protocol, validation, and dispatch
 internal/gitlab   merge requests, review discussions, commit statuses
 internal/jenkins  build reports, stage and test failures
 internal/jira     compact issue context and attachment downloads
+internal/confluence compact page context, body extraction, attachment downloads
 internal/sonar    quality gates, new-code coverage, issues
 internal/git      repository context
 internal/config   environment and env-file handling

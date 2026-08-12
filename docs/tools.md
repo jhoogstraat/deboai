@@ -111,21 +111,49 @@ comments are intentionally not used to decide CI state.
 
 ## `jira_ticket`
 
-Requires `ticket`, an issue key such as `ABC-123`.
+Requires `ticket`, an issue key such as `ABC-123`. Optional `attachment`
+selects one attachment by ID or exact filename for download.
 
 ```json
 {
   "meta": { "key": "ABC-123", "id": "1", "url": "…", "summary": "…", "issueType": {}, "status": {}, "priority": {}, "project": {}, "assignee": {}, "reporter": {}, "creator": {}, "created": "…", "updated": "…", "dueDate": "…", "labels": [], "components": [], "fixVersions": [], "versions": [] },
-  "content": { "description": "…", "environment": "…", "comments": [], "links": [], "attachments": [] }
+  "content": { "description": "…", "environment": "…", "comments": [], "links": [], "attachments": [{ "id": "10", "filename": "notes.txt", "mimeType": "text/plain", "size": 42, "url": "…", "localPath": "…" }] }
 }
 ```
 
 Markup is stripped and long text is truncated. Empty fields are dropped from
-both objects. Image attachments are downloaded below
+both objects. Image attachments and the explicitly selected attachment are downloaded below
 `JIRA_ATTACHMENT_DIR/<ticket>/attachments/` (default `ticket-analysis`) and
 reported with a repository-relative `localPath`; other attachments are listed
 with their URL only. Downloads are capped at 20 MB, must be served from the
-Jira host, and cannot escape the repository root.
+Jira host, and cannot escape the repository root. Duplicate filenames must be
+selected by ID.
+
+## `confluence_page`
+
+Requires `page`, a Confluence page ID or supported same-host page URL. Optional
+`attachment` selects one page attachment by ID or exact filename for download. URLs
+with a `pageId` query or numeric `/pages/<id>` or `/content/<id>` path use one
+content request with the body expanded. Legacy `/display/<space>/<title>` URLs
+are resolved with one title lookup. `CONFLUENCE_URL` and
+`CONFLUENCE_API_TOKEN` are required and never inherited from Jira. Set
+`CONFLUENCE_USER` for Cloud basic authentication; without it, the token is
+sent as a bearer token. `CONFLUENCE_API_PATH`, `CONFLUENCE_COOKIE`, and
+`CONFLUENCE_ATTACHMENT_DIR` are optional.
+
+```json
+{
+  "meta": { "id": "123", "type": "page", "status": "current", "title": "Runbook", "url": "…", "space": { "key": "OPS", "name": "Operations" }, "version": { "number": 4, "when": "…" } },
+  "content": { "body": "Deploy and verify …", "attachment": { "id": "att1", "filename": "diagram.pdf", "mimeType": "application/pdf", "size": 42, "url": "…", "localPath": "…" } }
+}
+```
+
+Markup is stripped and the page body is truncated to keep linked
+documentation compact. Selected attachments are downloaded below
+`CONFLUENCE_ATTACHMENT_DIR/<page-id>/attachments/` (default
+`confluence-analysis`). Downloads are capped at 20 MB, must be served from the
+Confluence host, and cannot escape the repository root. Duplicate filenames
+must be selected by ID.
 
 ## `sonar_issues`
 
