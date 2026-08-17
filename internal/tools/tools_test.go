@@ -30,7 +30,7 @@ func TestAllExposesTheDocumentedTools(t *testing.T) {
 		}
 	}
 
-	expected := []string{"repository_context", "code_review_context", "jenkins_status", "ci_gate_runs", "jira_ticket", "confluence_page", "sonar_issues"}
+	expected := []string{"repository", "review", "jenkins", "ci", "jira", "confluence", "sonar"}
 	if !reflect.DeepEqual(names, expected) {
 		t.Fatalf("All() = %#v, want %#v", names, expected)
 	}

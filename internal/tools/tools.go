@@ -53,7 +53,7 @@ var worktreeArgument = Argument{
 func All() []Definition {
 	return []Definition{
 		{
-			Name:        "repository_context",
+			Name:        "repository",
 			Description: "Return the selected local Git worktree and checkout context.",
 			Arguments:   []Argument{worktreeArgument},
 			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, _ config.Values, _ Arguments) (string, error) {
@@ -61,7 +61,7 @@ func All() []Definition {
 			}),
 		},
 		{
-			Name:        "code_review_context",
+			Name:        "review",
 			Description: "Return the selected worktree's matching GitLab merge request and latest actionable review comment, when available.",
 			Arguments:   []Argument{worktreeArgument},
 			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, _ Arguments) (string, error) {
@@ -69,7 +69,7 @@ func All() []Definition {
 			}),
 		},
 		{
-			Name:        "jenkins_status",
+			Name:        "jenkins",
 			Description: "Return Jenkins build status, removed-report state, and actionable stage or test failures.",
 			Arguments: []Argument{
 				{Name: "build_url", Description: "Optional Jenkins build URL. Omit it to inspect the active commit."},
@@ -80,7 +80,7 @@ func All() []Definition {
 			}),
 		},
 		{
-			Name:        "ci_gate_runs",
+			Name:        "ci",
 			Description: "Return the CI gate runs published by GitLab for the selected merge request head.",
 			Arguments:   []Argument{worktreeArgument},
 			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, _ Arguments) (string, error) {
@@ -88,7 +88,7 @@ func All() []Definition {
 			}),
 		},
 		{
-			Name:        "jira_ticket",
+			Name:        "jira",
 			Description: "Return compact Jira issue context and optionally download one attachment.",
 			Arguments: []Argument{
 				{Name: "ticket", Description: "Jira issue key, for example ABC-123.", Required: true},
@@ -100,7 +100,7 @@ func All() []Definition {
 			}),
 		},
 		{
-			Name:        "confluence_page",
+			Name:        "confluence",
 			Description: "Return compact Confluence page context by page ID or page URL.",
 			Arguments: []Argument{
 				{Name: "page", Description: "Confluence page ID or supported same-host page URL.", Required: true},
@@ -112,7 +112,7 @@ func All() []Definition {
 			}),
 		},
 		{
-			Name:        "sonar_issues",
+			Name:        "sonar",
 			Description: "Return failed quality-gate conditions, actionable new-code coverage lines, and confirmed/open SonarQube issues.",
 			Arguments: []Argument{
 				{Name: "branch", Description: "Optional Git branch name. Omit it to use the current branch."},

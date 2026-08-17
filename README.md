@@ -90,7 +90,7 @@ Each integration is configured independently and only fails the command that nee
 | SonarQube | `SONAR_HOST_URL`, `SONAR_TOKEN` | `SONAR_PROJECT_KEY`, `SONAR_BRANCH_PREFIX` |
 
 `SONARQUBE_CLI_SERVER` and `SONARQUBE_CLI_TOKEN` are accepted as aliases for the SonarQube host and token.
-When `SONAR_PROJECT_KEY` is omitted, `sonar_issues` can infer it from the `id`
+When `SONAR_PROJECT_KEY` is omitted, `sonar` can infer it from the `id`
 parameter of a same-host SonarQube URL published as a GitLab commit status for
 the selected merge request's current head SHA. Set the variable explicitly if
 no such status exists or more than one project key is found.
@@ -112,7 +112,7 @@ MCP mode is opt-in and speaks JSON-RPC over stdio. Register it with your assista
 }
 ```
 
-The server exposes the existing `repository_context`, `code_review_context`, `jenkins_status`, `ci_gate_runs`, `jira_ticket`, `confluence_page`, and `sonar_issues` tools. Each accepts an optional `worktree_path`, allowing one process to inspect multiple worktrees. The server defaults to MCP protocol revision `2026-07-28`, negotiating down to `2025-06-18`, `2025-03-26`, or `2024-11-05`.
+The server exposes the existing `repository`, `review`, `jenkins`, `ci`, `jira`, `confluence`, and `sonar` tools. Each accepts an optional `worktree_path`, allowing one process to inspect multiple worktrees. The server defaults to MCP protocol revision `2026-07-28`, negotiating down to `2025-06-18`, `2025-03-26`, or `2024-11-05`.
 
 To try it by hand:
 

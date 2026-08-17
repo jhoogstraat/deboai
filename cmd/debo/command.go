@@ -80,7 +80,7 @@ func newRootCommand(version string, definitions []tools.Definition, input io.Rea
 		Short:   "Show a Jira ticket and download attachments",
 		Args:    cobra.ExactArgs(1),
 		Example: "  debo jira ABC-123\n  debo jira ABC-123 --attachment notes.txt",
-		RunE: runTool("jira_ticket", func(arguments []string) tools.Arguments {
+		RunE: runTool("jira", func(arguments []string) tools.Arguments {
 			values := tools.Arguments{"ticket": arguments[0]}
 			if jiraAttachment != "" {
 				values["attachment"] = jiraAttachment
@@ -96,7 +96,7 @@ func newRootCommand(version string, definitions []tools.Definition, input io.Rea
 		Short:   "Show a Confluence page and optionally download an attachment",
 		Args:    cobra.ExactArgs(1),
 		Example: "  debo confluence https://wiki.example/pages/123/Runbook\n  debo confluence 123 --attachment diagram.pdf",
-		RunE: runTool("confluence_page", func(arguments []string) tools.Arguments {
+		RunE: runTool("confluence", func(arguments []string) tools.Arguments {
 			values := tools.Arguments{"page": arguments[0]}
 			if confluenceAttachment != "" {
 				values["attachment"] = confluenceAttachment
@@ -112,28 +112,28 @@ func newRootCommand(version string, definitions []tools.Definition, input io.Rea
 			Short:   "Show local repository and checkout context",
 			Args:    cobra.NoArgs,
 			Example: "  debo repository\n  debo repository --worktree ../other-worktree",
-			RunE:    runTool("repository_context", noArguments),
+			RunE:    runTool("repository", noArguments),
 		},
 		&cobra.Command{
 			Use:     "review",
 			Short:   "Show the matching GitLab merge request and review",
 			Args:    cobra.NoArgs,
 			Example: "  debo review",
-			RunE:    runTool("code_review_context", noArguments),
+			RunE:    runTool("review", noArguments),
 		},
 		&cobra.Command{
 			Use:     "ci",
 			Short:   "Show CI gate runs for the merge request head",
 			Args:    cobra.NoArgs,
 			Example: "  debo ci",
-			RunE:    runTool("ci_gate_runs", noArguments),
+			RunE:    runTool("ci", noArguments),
 		},
 		&cobra.Command{
 			Use:     "jenkins [build-url]",
 			Short:   "Show Jenkins build failures",
 			Args:    cobra.MaximumNArgs(1),
 			Example: "  debo jenkins\n  debo jenkins https://jenkins.example/job/example/42/",
-			RunE: runTool("jenkins_status", func(arguments []string) tools.Arguments {
+			RunE: runTool("jenkins", func(arguments []string) tools.Arguments {
 				return optionalArgument("build_url", arguments)
 			}),
 		},
@@ -144,7 +144,7 @@ func newRootCommand(version string, definitions []tools.Definition, input io.Rea
 			Short:   "Show SonarQube quality-gate and code issues",
 			Args:    cobra.MaximumNArgs(1),
 			Example: "  debo sonar\n  debo sonar feature/example",
-			RunE: runTool("sonar_issues", func(arguments []string) tools.Arguments {
+			RunE: runTool("sonar", func(arguments []string) tools.Arguments {
 				return optionalArgument("branch", arguments)
 			}),
 		},
