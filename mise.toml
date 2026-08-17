@@ -8,5 +8,5 @@ run = "go run -ldflags \"-X main.version=$(git describe --tags --always --dirty)
 [tasks.test]
 run = "go test ./..."
 
-[tasks.export]
+[tasks.build]
 run = "go build -ldflags \"-X main.version=$(git describe --tags --always --dirty)\" -o bin/debo ./cmd/debo"

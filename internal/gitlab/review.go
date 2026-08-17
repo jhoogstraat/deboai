@@ -17,8 +17,8 @@ const maxReviewBodyLength = 4000
 // for the current branch when an open merge request exists.
 func (c *Client) ReviewContext(ctx context.Context, repo git.Context) (map[string]any, error) {
 	result := map[string]any{
-		"merge_request": nil,
-		"review":        nil,
+		"mr":     nil,
+		"review": nil,
 	}
 	if repo.Branch == "" {
 		return result, nil
@@ -38,7 +38,7 @@ func (c *Client) ReviewContext(ctx context.Context, repo git.Context) (map[strin
 	if err != nil {
 		return nil, err
 	}
-	result["merge_request"] = CompactMergeRequest(mergeRequest)
+	result["mr"] = CompactMergeRequest(mergeRequest)
 	result["review"] = CompactReview(c.latestReview(discussions, username))
 	return result, nil
 }

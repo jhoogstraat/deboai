@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 
 	"github.com/jhoogstraat/deboai/internal/config"
 	"github.com/jhoogstraat/deboai/internal/git"
@@ -79,32 +78,43 @@ func FromValues(values config.Values) (*Client, error) {
 // Request performs an API call. When optional is set, a 404 yields a nil body
 // instead of an error.
 func (c *Client) Request(ctx context.Context, method, path string, query url.Values, optional bool) ([]byte, error) {
-	response, err := httpx.Do(ctx, c.http, method, httpx.WithQuery(httpx.Join(c.baseURL, path), query), map[string]string{
-		"Accept":        "application/json",
-		"PRIVATE-TOKEN": c.token,
-	}, 0)
+	response, err := c.response(ctx, method, path, query, optional)
 	if err != nil {
 		return nil, err
 	}
 	if optional && response.Status == http.StatusNotFound {
 		return nil, nil
 	}
-	if !response.OK() {
-		return nil, httpx.APIError("GitLab", response.Status, response.Body)
-	}
 	return response.Body, nil
 }
 
-func (c *Client) requestList(ctx context.Context, path string, query url.Values, description string) ([]map[string]any, error) {
-	body, err := c.Request(ctx, http.MethodGet, path, query, false)
+func (c *Client) response(ctx context.Context, method, path string, query url.Values, optional bool) (httpx.Response, error) {
+	response, err := httpx.Do(ctx, c.http, method, httpx.WithQuery(httpx.Join(c.baseURL, path), query), map[string]string{
+		"Accept":        "application/json",
+		"PRIVATE-TOKEN": c.token,
+	}, 0)
 	if err != nil {
-		return nil, err
+		return httpx.Response{}, err
+	}
+	if optional && response.Status == http.StatusNotFound {
+		return response, nil
+	}
+	if !response.OK() {
+		return httpx.Response{}, httpx.APIError("GitLab", response.Status, response.Body)
+	}
+	return response, nil
+}
+
+func (c *Client) requestList(ctx context.Context, path string, query url.Values, description string) ([]map[string]any, bool, error) {
+	response, err := c.response(ctx, http.MethodGet, path, query, false)
+	if err != nil {
+		return nil, false, err
 	}
 	var items []map[string]any
-	if err := httpx.DecodeJSON(body, &items, description); err != nil {
-		return nil, err
+	if err := httpx.DecodeJSON(response.Body, &items, description); err != nil {
+		return nil, false, err
 	}
-	return items, nil
+	return items, response.Header.Get("X-Next-Page") != "", nil
 }
 
 // CurrentUsername returns the username of the authenticated account.
@@ -151,12 +161,12 @@ func (c *Client) MergeRequests(ctx context.Context, repo git.Context, allStates 
 	var matches []map[string]any
 	for page := 1; ; page++ {
 		query.Set("page", fmt.Sprint(page))
-		pageMatches, err := c.requestList(ctx, "/projects/"+ProjectPath(repo.Project)+"/merge_requests", query, "GitLab merge requests")
+		pageMatches, hasNext, err := c.requestList(ctx, "/projects/"+ProjectPath(repo.Project)+"/merge_requests", query, "GitLab merge requests")
 		if err != nil {
 			return nil, err
 		}
 		matches = append(matches, pageMatches...)
-		if len(pageMatches) < pageSize {
+		if !hasNext && len(pageMatches) < pageSize {
 			return matches, nil
 		}
 	}
@@ -180,78 +190,6 @@ func (c *Client) OpenMergeRequest(ctx context.Context, repo git.Context) (map[st
 
 var errAmbiguousMergeRequest = fmt.Errorf("more than one open GitLab merge request exists for the current branch")
 
-// MergeRequestLookup reports which merge request was selected for the branch of
-// repo and why, together with the other candidates.
-func (c *Client) MergeRequestLookup(ctx context.Context, repo git.Context) (selected any, lookup map[string]any, err error) {
-	lookup = map[string]any{
-		"project":       repo.Project,
-		"source_branch": jsonutil.Nullable(repo.Branch),
-		"selection":     "open_preferred",
-	}
-	if repo.Branch == "" {
-		lookup["all_matches"] = 0
-		lookup["open_matches"] = 0
-		lookup["reason"] = "detached_head"
-		lookup["related_merge_requests"] = []any{}
-		return nil, lookup, nil
-	}
-
-	matches, err := c.MergeRequests(ctx, repo, true)
-	if err != nil {
-		return nil, nil, err
-	}
-	opened := make([]map[string]any, 0)
-	for _, match := range matches {
-		if match["state"] == "opened" {
-			opened = append(opened, match)
-		}
-	}
-	if len(opened) > 1 {
-		return nil, nil, errAmbiguousMergeRequest
-	}
-
-	ordered := append([]map[string]any(nil), matches...)
-	sort.SliceStable(ordered, func(left, right int) bool {
-		return fmt.Sprint(ordered[left]["updated_at"]) > fmt.Sprint(ordered[right]["updated_at"])
-	})
-
-	var candidate map[string]any
-	switch {
-	case len(opened) > 0:
-		candidate = opened[0]
-	case len(ordered) > 0:
-		candidate = ordered[0]
-	}
-
-	related := make([]any, 0, len(ordered))
-	for _, match := range ordered {
-		related = append(related, CompactMergeRequest(match))
-	}
-	lookup["all_matches"] = len(matches)
-	lookup["open_matches"] = len(opened)
-	lookup["reason"] = lookupReason(candidate, len(matches))
-	lookup["related_merge_requests"] = related
-	if candidate == nil {
-		lookup["selected_state"] = nil
-		return nil, lookup, nil
-	}
-	lookup["selected_state"] = candidate["state"]
-	return CompactMergeRequest(candidate), lookup, nil
-}
-
-func lookupReason(candidate map[string]any, matches int) string {
-	switch {
-	case candidate != nil && candidate["state"] == "opened":
-		return "open_merge_request"
-	case candidate != nil:
-		return "matching_non_open_merge_request"
-	case matches > 0:
-		return "no_selectable_merge_request"
-	default:
-		return "no_matching_merge_request"
-	}
-}
-
 // Discussions returns every discussion thread of a merge request.
 func (c *Client) Discussions(ctx context.Context, repo git.Context, mergeRequest map[string]any) ([]map[string]any, error) {
 	iid := url.PathEscape(fmt.Sprint(mergeRequest["iid"]))
@@ -260,12 +198,12 @@ func (c *Client) Discussions(ctx context.Context, repo git.Context, mergeRequest
 	var all []map[string]any
 	for page := 1; ; page++ {
 		query := url.Values{"per_page": {fmt.Sprint(pageSize)}, "page": {fmt.Sprint(page)}}
-		pageItems, err := c.requestList(ctx, path, query, "GitLab discussions")
+		pageItems, hasNext, err := c.requestList(ctx, path, query, "GitLab discussions")
 		if err != nil {
 			return nil, err
 		}
 		all = append(all, pageItems...)
-		if len(pageItems) < pageSize {
+		if !hasNext && len(pageItems) < pageSize {
 			return all, nil
 		}
 	}
@@ -279,12 +217,12 @@ func (c *Client) CommitStatuses(ctx context.Context, project, commit string) ([]
 	statuses := []map[string]any{}
 	for page := 1; ; page++ {
 		query := url.Values{"per_page": {fmt.Sprint(pageSize)}, "page": {fmt.Sprint(page)}}
-		pageStatuses, err := c.requestList(ctx, path, query, "GitLab commit statuses")
+		pageStatuses, hasNext, err := c.requestList(ctx, path, query, "GitLab commit statuses")
 		if err != nil {
 			return nil, err
 		}
 		statuses = append(statuses, pageStatuses...)
-		if len(pageStatuses) < pageSize {
+		if !hasNext && len(pageStatuses) < pageSize {
 			break
 		}
 	}

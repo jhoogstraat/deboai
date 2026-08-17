@@ -83,6 +83,16 @@ func (c *Client) forBuild(buildURL string) *Client {
 	return &copied
 }
 
+func (c *Client) acceptsBuildURL(buildURL string) bool {
+	base, baseErr := httpx.ParseURL(c.baseURL)
+	build, buildErr := httpx.ParseURL(buildURL)
+	if baseErr != nil || buildErr != nil || !strings.EqualFold(base.Scheme, build.Scheme) || !strings.EqualFold(base.Host, build.Host) {
+		return false
+	}
+	basePath := strings.TrimRight(base.EscapedPath(), "/")
+	return basePath == "" || strings.HasPrefix(strings.TrimRight(build.EscapedPath(), "/")+"/", basePath+"/")
+}
+
 // request fetches a build sub-resource. When optional is set, a 404 yields a
 // nil body, which is how Jenkins reports a discarded build report.
 func (c *Client) request(ctx context.Context, path string, query url.Values, accept string, optional bool) ([]byte, error) {

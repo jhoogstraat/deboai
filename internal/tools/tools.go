@@ -53,7 +53,7 @@ var worktreeArgument = Argument{
 func All() []Definition {
 	return []Definition{
 		{
-			Name:        "repository_context",
+			Name:        "repository",
 			Description: "Return the selected local Git worktree and checkout context.",
 			Arguments:   []Argument{worktreeArgument},
 			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, _ config.Values, _ Arguments) (string, error) {
@@ -61,7 +61,7 @@ func All() []Definition {
 			}),
 		},
 		{
-			Name:        "code_review_context",
+			Name:        "review",
 			Description: "Return the selected worktree's matching GitLab merge request and latest actionable review comment, when available.",
 			Arguments:   []Argument{worktreeArgument},
 			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, _ Arguments) (string, error) {
@@ -69,7 +69,7 @@ func All() []Definition {
 			}),
 		},
 		{
-			Name:        "jenkins_status",
+			Name:        "jenkins",
 			Description: "Return Jenkins build status, removed-report state, and actionable stage or test failures.",
 			Arguments: []Argument{
 				{Name: "build_url", Description: "Optional Jenkins build URL. Omit it to inspect the active commit."},
@@ -80,7 +80,7 @@ func All() []Definition {
 			}),
 		},
 		{
-			Name:        "ci_gate_runs",
+			Name:        "ci",
 			Description: "Return the CI gate runs published by GitLab for the selected merge request head.",
 			Arguments:   []Argument{worktreeArgument},
 			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, _ Arguments) (string, error) {
@@ -88,7 +88,7 @@ func All() []Definition {
 			}),
 		},
 		{
-			Name:        "jira_ticket",
+			Name:        "jira",
 			Description: "Return compact Jira issue context and optionally download one attachment.",
 			Arguments: []Argument{
 				{Name: "ticket", Description: "Jira issue key, for example ABC-123.", Required: true},
@@ -100,7 +100,7 @@ func All() []Definition {
 			}),
 		},
 		{
-			Name:        "confluence_page",
+			Name:        "confluence",
 			Description: "Return compact Confluence page context by page ID or page URL.",
 			Arguments: []Argument{
 				{Name: "page", Description: "Confluence page ID or supported same-host page URL.", Required: true},
@@ -112,10 +112,10 @@ func All() []Definition {
 			}),
 		},
 		{
-			Name:        "sonar_issues",
+			Name:        "sonar",
 			Description: "Return failed quality-gate conditions, actionable new-code coverage lines, and confirmed/open SonarQube issues.",
 			Arguments: []Argument{
-				{Name: "branch", Description: "Optional Git branch name. Omit it to use the current branch."},
+				{Name: "branch", Description: "Optional Git branch name. Omit it to prefer the open GitLab merge request's pull-request analysis, falling back to the current branch."},
 				worktreeArgument,
 			},
 			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments Arguments) (string, error) {
@@ -197,7 +197,7 @@ func jenkinsStatus(ctx context.Context, repo *git.Repo, values config.Values, bu
 		if err != nil {
 			return "", err
 		}
-		result["selection"] = selection.Map()
+		result = jsonutil.Merge(result, selection.Map())
 	}
 
 	report, err := client.BuildReport(ctx, buildURL)
@@ -211,7 +211,6 @@ type gitLabCommitSelection struct {
 	client          *gitlab.Client
 	project         string
 	commit          string
-	checkoutCommit  string
 	mergeRequestIid any
 }
 
@@ -224,7 +223,7 @@ func selectGitLabCommit(ctx context.Context, repoContext git.Context, values con
 	if project == "" {
 		return gitLabCommitSelection{}, fmt.Errorf("no GitLab project found for the origin remote; set GITLAB_PROJECT_ID")
 	}
-	mergeRequest, _, err := client.MergeRequestLookup(ctx, repoContext)
+	mergeRequest, err := client.OpenMergeRequest(ctx, repoContext)
 	if err != nil {
 		return gitLabCommitSelection{}, err
 	}
@@ -240,24 +239,16 @@ func selectGitLabCommit(ctx context.Context, repoContext git.Context, values con
 		client:          client,
 		project:         project,
 		commit:          commit,
-		checkoutCommit:  repoContext.Commit,
 		mergeRequestIid: compactMergeRequest["iid"],
 	}, nil
 }
 
 func (s gitLabCommitSelection) Map() map[string]any {
-	result := map[string]any{
-		"source": "worktree",
-		"commit": s.commit,
-	}
-	if s.checkoutCommit != "" && s.checkoutCommit != s.commit {
-		result["checkoutCommit"] = s.checkoutCommit
-	}
+	result := map[string]any{"commit": s.commit}
 	if s.mergeRequestIid != nil {
-		result["source"] = "merge_request"
-		result["mergeRequestIid"] = s.mergeRequestIid
+		result["mr"] = s.mergeRequestIid
 	}
-	return jsonutil.RemoveEmpty(result)
+	return result
 }
 
 // ciGateRuns exposes the structured GitLab records that bridge an MR commit to
@@ -279,10 +270,7 @@ func ciGateRuns(ctx context.Context, repo *git.Repo, values config.Values) (stri
 	for _, status := range statuses {
 		gates = append(gates, gateRun(status))
 	}
-	return jsonutil.Compact(map[string]any{
-		"selection": selection.Map(),
-		"gates":     gates,
-	})
+	return jsonutil.Compact(jsonutil.Merge(selection.Map(), map[string]any{"gates": gates}))
 }
 
 func gateRun(status map[string]any) map[string]any {
@@ -323,17 +311,16 @@ func confluencePage(ctx context.Context, repo *git.Repo, values config.Values, p
 	return jsonutil.Compact(result)
 }
 
+// sonarIssues prefers SonarQube's pull-request analysis of the open GitLab
+// merge request for the current branch, since that is what the MR's own
+// quality gate reflects. A branch name, explicit or the current checkout,
+// is used only when no open merge request is selected.
 func sonarIssues(ctx context.Context, repo *git.Repo, values config.Values, branch string) (string, error) {
-	if strings.TrimSpace(branch) == "" {
-		current, err := repo.CurrentBranch(ctx)
-		if err != nil {
-			return "", err
-		}
-		if branch = strings.TrimSpace(current); branch == "" {
-			return "", fmt.Errorf("no active Git branch; pass a SonarQube branch name")
-		}
+	repoContext, err := repo.Context(ctx)
+	if err != nil {
+		return "", err
 	}
-	projectKey, source, err := sonarProjectKey(ctx, repo, values)
+	projectKey, source, err := sonarProjectKey(ctx, repoContext, values)
 	if err != nil {
 		return "", err
 	}
@@ -341,24 +328,70 @@ func sonarIssues(ctx context.Context, repo *git.Repo, values config.Values, bran
 	if err != nil {
 		return "", err
 	}
-	issues, err := client.Issues(ctx, branch)
+
+	result := map[string]any{}
+	var issues map[string]any
+	switch {
+	case strings.TrimSpace(branch) != "":
+		branch = strings.TrimSpace(branch)
+		issues, err = client.Issues(ctx, sonar.Branch(branch))
+		result["branch"] = branch
+	default:
+		mergeRequestIid, mrErr := openMergeRequestIid(ctx, repoContext, values)
+		if mrErr != nil {
+			return "", mrErr
+		}
+		if mergeRequestIid != nil {
+			issues, err = client.Issues(ctx, sonar.PullRequest(fmt.Sprint(mergeRequestIid)))
+			result["mr"] = mergeRequestIid
+		} else {
+			current, currentErr := repo.CurrentBranch(ctx)
+			if currentErr != nil {
+				return "", currentErr
+			}
+			if current = strings.TrimSpace(current); current == "" {
+				return "", fmt.Errorf("no active Git branch; pass a SonarQube branch name")
+			}
+			issues, err = client.Issues(ctx, sonar.Branch(current))
+			result["branch"] = current
+		}
+	}
 	if err != nil {
 		return "", err
 	}
-	issues["projectKey"] = projectKey
-	issues["projectKeySource"] = source
-	return jsonutil.Compact(issues)
+	result["projectKey"] = projectKey
+	result["projectKeySource"] = source
+	for key, value := range issues {
+		result[key] = value
+	}
+	return jsonutil.Compact(result)
+}
+
+// openMergeRequestIid returns the open GitLab merge request IID for the
+// current branch, or nil when GitLab is not configured or there is none.
+func openMergeRequestIid(ctx context.Context, repoContext git.Context, values config.Values) (any, error) {
+	if values.Value("GITLAB_API_URL") == "" || values.Value("GITLAB_TOKEN") == "" {
+		return nil, nil
+	}
+	client, err := gitlab.FromValues(values)
+	if err != nil {
+		return nil, err
+	}
+	mergeRequest, err := client.OpenMergeRequest(ctx, repoContext)
+	if err != nil {
+		return nil, err
+	}
+	if mergeRequest == nil {
+		return nil, nil
+	}
+	return mergeRequest["iid"], nil
 }
 
 // sonarProjectKey uses explicit configuration first. When it is absent, it
 // accepts only a Sonar URL on a GitLab status for the selected MR head SHA.
-func sonarProjectKey(ctx context.Context, repo *git.Repo, values config.Values) (string, string, error) {
+func sonarProjectKey(ctx context.Context, repoContext git.Context, values config.Values) (string, string, error) {
 	if projectKey := values.Value("SONAR_PROJECT_KEY"); projectKey != "" {
 		return projectKey, "environment", nil
-	}
-	repoContext, err := repo.Context(ctx)
-	if err != nil {
-		return "", "", err
 	}
 	return sonarProjectKeyFromGitLab(ctx, repoContext, values)
 }
@@ -378,6 +411,9 @@ func sonarProjectKeyFromGitLab(ctx context.Context, repoContext git.Context, val
 	}
 	candidates := map[string]struct{}{}
 	for _, status := range statuses {
+		if !strings.Contains(strings.ToLower(jsonutil.String(status["name"])), "sonar") {
+			continue
+		}
 		if projectKey, ok := sonar.ProjectKeyFromURL(baseURL, jsonutil.String(status["target_url"])); ok {
 			candidates[projectKey] = struct{}{}
 		}

@@ -15,10 +15,6 @@ import (
 	"github.com/jhoogstraat/deboai/internal/textutil"
 )
 
-// DefaultBranchPrefix is prepended to a local branch name, because SonarQube
-// commonly analyses branches under their remote name.
-const DefaultBranchPrefix = "origin/"
-
 const pageSize = 500
 
 // Options configures a Client.
@@ -29,20 +25,16 @@ type Options struct {
 	Token string
 	// ProjectKey identifies the analysed project.
 	ProjectKey string
-	// BranchPrefix is prepended to branch names that lack it. Set it to "-"
-	// to disable prefixing.
-	BranchPrefix string
 	// HTTPClient overrides the default HTTP client.
 	HTTPClient *http.Client
 }
 
 // Client talks to the SonarQube web API.
 type Client struct {
-	baseURL      string
-	token        string
-	projectKey   string
-	branchPrefix string
-	http         *http.Client
+	baseURL    string
+	token      string
+	projectKey string
+	http       *http.Client
 }
 
 // New builds a client from explicit options.
@@ -57,19 +49,11 @@ func New(options Options) (*Client, error) {
 	if client == nil {
 		client = httpx.NewClient()
 	}
-	prefix := options.BranchPrefix
-	if prefix == "" {
-		prefix = DefaultBranchPrefix
-	}
-	if prefix == "-" {
-		prefix = ""
-	}
 	return &Client{
-		baseURL:      strings.TrimRight(options.BaseURL, "/"),
-		token:        options.Token,
-		projectKey:   options.ProjectKey,
-		branchPrefix: prefix,
-		http:         client,
+		baseURL:    strings.TrimRight(options.BaseURL, "/"),
+		token:      options.Token,
+		projectKey: options.ProjectKey,
+		http:       client,
 	}, nil
 }
 
@@ -79,8 +63,7 @@ func BaseURLFromValues(values config.Values) (string, error) {
 }
 
 // FromValues builds a client from SONAR_HOST_URL (or SONARQUBE_CLI_SERVER),
-// SONAR_TOKEN (or SONARQUBE_CLI_TOKEN), SONAR_PROJECT_KEY, and the optional
-// SONAR_BRANCH_PREFIX.
+// SONAR_TOKEN (or SONARQUBE_CLI_TOKEN), and SONAR_PROJECT_KEY.
 func FromValues(values config.Values) (*Client, error) {
 	projectKey, err := values.Require("SONAR_PROJECT_KEY")
 	if err != nil {
@@ -102,10 +85,9 @@ func FromValuesWithProjectKey(values config.Values, projectKey string) (*Client,
 		return nil, err
 	}
 	return New(Options{
-		BaseURL:      baseURL,
-		Token:        token,
-		ProjectKey:   projectKey,
-		BranchPrefix: values.Value("SONAR_BRANCH_PREFIX"),
+		BaseURL:    baseURL,
+		Token:      token,
+		ProjectKey: projectKey,
 	})
 }
 
@@ -132,12 +114,30 @@ func ProjectKeyFromURL(baseURL, targetURL string) (string, bool) {
 	return key, key != ""
 }
 
-// BranchName returns the SonarQube branch name for a local branch.
-func (c *Client) BranchName(branch string) string {
-	if c.branchPrefix == "" || strings.HasPrefix(branch, c.branchPrefix) {
-		return branch
+// Target selects the SonarQube analysis Issues queries: either a long-lived
+// branch or a merge request analysed as a pull request.
+type Target struct {
+	branch      string
+	pullRequest string
+}
+
+// Branch targets a long-lived branch analysis, used verbatim.
+func Branch(name string) Target {
+	return Target{branch: strings.TrimSpace(name)}
+}
+
+// PullRequest targets SonarQube's pull-request analysis of a merge request,
+// for projects that analyse merge requests instead of long-lived branches.
+func PullRequest(mergeRequestIid string) Target {
+	return Target{pullRequest: strings.TrimSpace(mergeRequestIid)}
+}
+
+func (t Target) apply(query url.Values) {
+	if t.pullRequest != "" {
+		query.Set("pullRequest", t.pullRequest)
+	} else {
+		query.Set("branch", t.branch)
 	}
-	return c.branchPrefix + branch
 }
 
 func (c *Client) api(ctx context.Context, path string, query url.Values) (map[string]any, error) {
@@ -158,21 +158,19 @@ func (c *Client) api(ctx context.Context, path string, query url.Values) (map[st
 	return result, nil
 }
 
-// Issues returns the failed quality gate conditions of a branch, the new-code
-// lines that are missing coverage, and the confirmed or open issues.
-func (c *Client) Issues(ctx context.Context, branch string) (map[string]any, error) {
-	sonarBranch := c.BranchName(strings.TrimSpace(branch))
-	if sonarBranch == "" {
-		return nil, fmt.Errorf("a SonarQube branch name is required")
+// Issues returns the failed quality gate conditions, missing new-code
+// coverage, and confirmed/open issues for the given Target.
+func (c *Client) Issues(ctx context.Context, t Target) (map[string]any, error) {
+	if t.branch == "" && t.pullRequest == "" {
+		return nil, fmt.Errorf("a SonarQube branch or pull request is required")
 	}
-	if err := c.requireBranch(ctx, sonarBranch); err != nil {
+	if err := c.requireTarget(ctx, t); err != nil {
 		return nil, err
 	}
 
-	qualityGate, err := c.api(ctx, "/api/qualitygates/project_status", url.Values{
-		"projectKey": {c.projectKey},
-		"branch":     {sonarBranch},
-	})
+	query := url.Values{"projectKey": {c.projectKey}}
+	t.apply(query)
+	qualityGate, err := c.api(ctx, "/api/qualitygates/project_status", query)
 	if err != nil {
 		return nil, err
 	}
@@ -180,11 +178,11 @@ func (c *Client) Issues(ctx context.Context, branch string) (map[string]any, err
 
 	coverageFiles := []any{}
 	if hasFailedCoverageCondition(failedConditions) {
-		if coverageFiles, err = c.coverageFiles(ctx, sonarBranch); err != nil {
+		if coverageFiles, err = c.coverageFiles(ctx, t); err != nil {
 			return nil, err
 		}
 	}
-	issues, err := c.issues(ctx, sonarBranch)
+	issues, err := c.issues(ctx, t)
 	if err != nil {
 		return nil, err
 	}
@@ -195,30 +193,51 @@ func (c *Client) Issues(ctx context.Context, branch string) (map[string]any, err
 	}, nil
 }
 
-func (c *Client) requireBranch(ctx context.Context, sonarBranch string) error {
+func (c *Client) requireTarget(ctx context.Context, t Target) error {
+	if t.pullRequest != "" {
+		return c.requirePullRequest(ctx, t.pullRequest)
+	}
+	return c.requireBranch(ctx, t.branch)
+}
+
+func (c *Client) requireBranch(ctx context.Context, branch string) error {
 	branches, err := c.api(ctx, "/api/project_branches/list", url.Values{"project": {c.projectKey}})
 	if err != nil {
 		return err
 	}
 	for _, rawBranch := range jsonutil.Array(branches, "branches") {
-		if jsonutil.String(jsonutil.Map(rawBranch)["name"]) == sonarBranch {
+		if jsonutil.String(jsonutil.Map(rawBranch)["name"]) == branch {
 			return nil
 		}
 	}
-	return fmt.Errorf("SonarQube branch not found: %s", sonarBranch)
+	return fmt.Errorf("SonarQube branch not found: %s", branch)
 }
 
-func (c *Client) issues(ctx context.Context, sonarBranch string) ([]any, error) {
+func (c *Client) requirePullRequest(ctx context.Context, mergeRequestIid string) error {
+	pullRequests, err := c.api(ctx, "/api/project_pull_requests/list", url.Values{"project": {c.projectKey}})
+	if err != nil {
+		return err
+	}
+	for _, rawPullRequest := range jsonutil.Array(pullRequests, "pullRequests") {
+		if jsonutil.String(jsonutil.Map(rawPullRequest)["key"]) == mergeRequestIid {
+			return nil
+		}
+	}
+	return fmt.Errorf("SonarQube pull request not found: %s", mergeRequestIid)
+}
+
+func (c *Client) issues(ctx context.Context, t Target) ([]any, error) {
 	issues := []any{}
 	for page := 1; ; page++ {
-		response, err := c.api(ctx, "/api/issues/search", url.Values{
+		query := url.Values{
 			"componentKeys":   {c.projectKey},
-			"branch":          {sonarBranch},
 			"inNewCodePeriod": {"true"},
 			"statuses":        {"CONFIRMED,OPEN"},
 			"ps":              {fmt.Sprint(pageSize)},
 			"p":               {fmt.Sprint(page)},
-		})
+		}
+		t.apply(query)
+		response, err := c.api(ctx, "/api/issues/search", query)
 		if err != nil {
 			return nil, err
 		}
@@ -255,8 +274,8 @@ func hasFailedCoverageCondition(conditions []any) bool {
 
 // coverageFiles lists the new-code lines that are uncovered or only partially
 // covered, per file.
-func (c *Client) coverageFiles(ctx context.Context, sonarBranch string) ([]any, error) {
-	components, err := c.uncoveredComponents(ctx, sonarBranch)
+func (c *Client) coverageFiles(ctx context.Context, t Target) ([]any, error) {
+	components, err := c.uncoveredComponents(ctx, t)
 	if err != nil {
 		return nil, err
 	}
@@ -267,10 +286,9 @@ func (c *Client) coverageFiles(ctx context.Context, sonarBranch string) ([]any, 
 		if !hasUncoveredCoverage(component) {
 			continue
 		}
-		response, err := c.api(ctx, "/api/sources/lines", url.Values{
-			"key":    {jsonutil.String(component["key"])},
-			"branch": {sonarBranch},
-		})
+		query := url.Values{"key": {jsonutil.String(component["key"])}}
+		t.apply(query)
+		response, err := c.api(ctx, "/api/sources/lines", query)
 		if err != nil {
 			return nil, err
 		}
@@ -286,17 +304,18 @@ func (c *Client) coverageFiles(ctx context.Context, sonarBranch string) ([]any, 
 	return coverageFiles, nil
 }
 
-func (c *Client) uncoveredComponents(ctx context.Context, sonarBranch string) ([]any, error) {
+func (c *Client) uncoveredComponents(ctx context.Context, t Target) ([]any, error) {
 	components := []any{}
 	for page := 1; ; page++ {
-		response, err := c.api(ctx, "/api/measures/component_tree", url.Values{
+		query := url.Values{
 			"component":  {c.projectKey},
-			"branch":     {sonarBranch},
 			"metricKeys": {"new_uncovered_lines,new_uncovered_conditions"},
 			"qualifiers": {"FIL"},
 			"ps":         {fmt.Sprint(pageSize)},
 			"p":          {fmt.Sprint(page)},
-		})
+		}
+		t.apply(query)
+		response, err := c.api(ctx, "/api/measures/component_tree", query)
 		if err != nil {
 			return nil, err
 		}

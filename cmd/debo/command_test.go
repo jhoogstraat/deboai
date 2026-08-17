@@ -56,17 +56,17 @@ func TestCommandsMapPositionalArguments(t *testing.T) {
 		tool     string
 		expected tools.Arguments
 	}{
-		{name: "repository", command: []string{"--worktree", "/repo", "repository"}, tool: "repository_context", expected: tools.Arguments{"worktree_path": "/repo"}},
-		{name: "review", command: []string{"review"}, tool: "code_review_context", expected: tools.Arguments{}},
-		{name: "ci", command: []string{"ci"}, tool: "ci_gate_runs", expected: tools.Arguments{}},
-		{name: "jenkins default", command: []string{"jenkins"}, tool: "jenkins_status", expected: tools.Arguments{}},
-		{name: "jenkins URL", command: []string{"jenkins", "https://jenkins.example/job/example/42/"}, tool: "jenkins_status", expected: tools.Arguments{"build_url": "https://jenkins.example/job/example/42/"}},
-		{name: "jira", command: []string{"jira", "ABC-123"}, tool: "jira_ticket", expected: tools.Arguments{"ticket": "ABC-123"}},
-		{name: "jira attachment", command: []string{"jira", "ABC-123", "--attachment", "notes.txt"}, tool: "jira_ticket", expected: tools.Arguments{"ticket": "ABC-123", "attachment": "notes.txt"}},
-		{name: "confluence", command: []string{"confluence", "123"}, tool: "confluence_page", expected: tools.Arguments{"page": "123"}},
-		{name: "confluence attachment", command: []string{"confluence", "123", "--attachment", "diagram.pdf"}, tool: "confluence_page", expected: tools.Arguments{"page": "123", "attachment": "diagram.pdf"}},
-		{name: "sonar default", command: []string{"sonar"}, tool: "sonar_issues", expected: tools.Arguments{}},
-		{name: "sonar branch", command: []string{"sonar", "feature/example"}, tool: "sonar_issues", expected: tools.Arguments{"branch": "feature/example"}},
+		{name: "repository", command: []string{"--worktree", "/repo", "repository"}, tool: "repository", expected: tools.Arguments{"worktree_path": "/repo"}},
+		{name: "review", command: []string{"review"}, tool: "review", expected: tools.Arguments{}},
+		{name: "ci", command: []string{"ci"}, tool: "ci", expected: tools.Arguments{}},
+		{name: "jenkins default", command: []string{"jenkins"}, tool: "jenkins", expected: tools.Arguments{}},
+		{name: "jenkins URL", command: []string{"jenkins", "https://jenkins.example/job/example/42/"}, tool: "jenkins", expected: tools.Arguments{"build_url": "https://jenkins.example/job/example/42/"}},
+		{name: "jira", command: []string{"jira", "ABC-123"}, tool: "jira", expected: tools.Arguments{"ticket": "ABC-123"}},
+		{name: "jira attachment", command: []string{"jira", "ABC-123", "--attachment", "notes.txt"}, tool: "jira", expected: tools.Arguments{"ticket": "ABC-123", "attachment": "notes.txt"}},
+		{name: "confluence", command: []string{"confluence", "123"}, tool: "confluence", expected: tools.Arguments{"page": "123"}},
+		{name: "confluence attachment", command: []string{"confluence", "123", "--attachment", "diagram.pdf"}, tool: "confluence", expected: tools.Arguments{"page": "123", "attachment": "diagram.pdf"}},
+		{name: "sonar default", command: []string{"sonar"}, tool: "sonar", expected: tools.Arguments{}},
+		{name: "sonar branch", command: []string{"sonar", "feature/example"}, tool: "sonar", expected: tools.Arguments{"branch": "feature/example"}},
 	}
 
 	for _, test := range tests {
@@ -130,7 +130,7 @@ func TestMCPRequiresDedicatedRootFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output, `"name":"repository_context"`) || strings.Contains(output, "Usage:") {
+	if !strings.Contains(output, `"name":"repository"`) || strings.Contains(output, "Usage:") {
 		t.Fatalf("MCP output = %q", output)
 	}
 
@@ -171,7 +171,7 @@ func execute(t *testing.T, arguments []string, input io.Reader, definitions []to
 }
 
 func testDefinitions(called func(string, tools.Arguments)) []tools.Definition {
-	names := []string{"repository_context", "code_review_context", "jenkins_status", "ci_gate_runs", "jira_ticket", "confluence_page", "sonar_issues"}
+	names := []string{"repository", "review", "jenkins", "ci", "jira", "confluence", "sonar"}
 	definitions := make([]tools.Definition, 0, len(names))
 	for _, name := range names {
 		name := name
