@@ -135,43 +135,30 @@ type Context struct {
 	Branch     string
 	Upstream   string
 	Commit     string
-	Root       string
-	Cwd        string
+	Worktree   string
 	Dirty      bool
-}
-
-// Detached reports whether HEAD points at a commit rather than a branch.
-func (c Context) Detached() bool {
-	return c.Branch == ""
 }
 
 // Map renders the context as the JSON object embedded in tool results.
 func (c Context) Map() map[string]any {
-	return map[string]any{
-		"project": c.Project,
+	result := map[string]any{
 		"remote": map[string]any{
 			"host":    c.RemoteHost,
 			"project": c.Project,
-		},
-		"worktree": map[string]any{
-			"root":      c.Root,
-			"cwd":       c.Cwd,
-			"cwdIsRoot": c.Cwd == c.Root,
 		},
 		"branch":   jsonutil.Nullable(c.Branch),
 		"upstream": jsonutil.Nullable(c.Upstream),
 		"commit":   c.Commit,
 		"dirty":    c.Dirty,
-		"detached": c.Detached(),
 	}
+	if c.Worktree != "" {
+		result["worktree"] = c.Worktree
+	}
+	return result
 }
 
 // Context collects the branch, commit, remote, and worktree state.
 func (r *Repo) Context(ctx context.Context) (Context, error) {
-	root, err := r.Run(ctx, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return Context{}, err
-	}
 	commit, err := r.Run(ctx, "rev-parse", "HEAD")
 	if err != nil {
 		return Context{}, err
@@ -180,9 +167,9 @@ func (r *Repo) Context(ctx context.Context) (Context, error) {
 	if err != nil {
 		return Context{}, err
 	}
-	rootPath, err := filepath.Abs(root)
+	worktree, err := r.worktreeName(ctx)
 	if err != nil {
-		return Context{}, fmt.Errorf("resolve repository root: %w", err)
+		return Context{}, err
 	}
 	host, project := RemoteParts(r.optional(ctx, "remote", "get-url", "origin"))
 
@@ -192,10 +179,34 @@ func (r *Repo) Context(ctx context.Context) (Context, error) {
 		Branch:     r.optional(ctx, "symbolic-ref", "--quiet", "--short", "HEAD"),
 		Upstream:   r.optional(ctx, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"),
 		Commit:     commit,
-		Root:       rootPath,
-		Cwd:        rootPath,
+		Worktree:   worktree,
 		Dirty:      status != "",
 	}, nil
+}
+
+// worktreeName returns the name Git assigned to a linked worktree, or the
+// empty string for the main worktree.
+func (r *Repo) worktreeName(ctx context.Context) (string, error) {
+	gitDir, err := r.Run(ctx, "rev-parse", "--git-dir")
+	if err != nil {
+		return "", err
+	}
+	commonDir, err := r.Run(ctx, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	gitDir, err = filepath.Abs(filepath.Join(r.root, gitDir))
+	if err != nil {
+		return "", fmt.Errorf("resolve git dir: %w", err)
+	}
+	commonDir, err = filepath.Abs(filepath.Join(r.root, commonDir))
+	if err != nil {
+		return "", fmt.Errorf("resolve git common dir: %w", err)
+	}
+	if gitDir == commonDir {
+		return "", nil
+	}
+	return filepath.Base(gitDir), nil
 }
 
 // RemoteParts splits an SSH or HTTP git remote into its host and project path.

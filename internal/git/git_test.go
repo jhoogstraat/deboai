@@ -32,19 +32,31 @@ func TestContextMap(t *testing.T) {
 		Project:    "acme/example",
 		RemoteHost: "gitlab.example",
 		Commit:     "abc123",
-		Root:       "/repo",
-		Cwd:        "/repo",
 	}
 	result := repoContext.Map()
 	if result["branch"] != nil {
 		t.Fatalf("Map() branch = %v, want nil for a detached HEAD", result["branch"])
 	}
-	if result["detached"] != true {
-		t.Fatalf("Map() detached = %v, want true", result["detached"])
+	if _, ok := result["detached"]; ok {
+		t.Fatalf("Map() result = %#v, want no detached key", result)
 	}
-	worktree, _ := result["worktree"].(map[string]any)
-	if worktree["cwdIsRoot"] != true {
-		t.Fatalf("Map() worktree = %#v, want cwdIsRoot", worktree)
+	remote, _ := result["remote"].(map[string]any)
+	if remote["project"] != "acme/example" {
+		t.Fatalf("Map() remote = %#v, want project acme/example", remote)
+	}
+	if _, ok := result["project"]; ok {
+		t.Fatalf("Map() result = %#v, want no top-level project key", result)
+	}
+	if _, ok := result["worktree"]; ok {
+		t.Fatalf("Map() result = %#v, want no worktree key for the main worktree", result)
+	}
+}
+
+func TestContextMapWorktree(t *testing.T) {
+	repoContext := Context{Commit: "abc123", Worktree: "feature"}
+	result := repoContext.Map()
+	if result["worktree"] != "feature" {
+		t.Fatalf("Map() worktree = %v, want feature", result["worktree"])
 	}
 }
 
@@ -103,8 +115,11 @@ func TestOpenWorktreeUsesSelectedLinkedWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repo.Root() != worktreeRoot || context.Root != worktreeRoot || context.Cwd != worktreeRoot {
-		t.Fatalf("selected worktree = repo:%q context:%#v, want %q", repo.Root(), context, worktreeRoot)
+	if repo.Root() != worktreeRoot {
+		t.Fatalf("selected worktree = repo:%q, want %q", repo.Root(), worktreeRoot)
+	}
+	if context.Worktree != filepath.Base(worktreeRoot) {
+		t.Fatalf("selected worktree name = %q, want %q", context.Worktree, filepath.Base(worktreeRoot))
 	}
 	if context.Branch != "feature/worktree" {
 		t.Fatalf("selected branch = %q, want feature/worktree", context.Branch)
