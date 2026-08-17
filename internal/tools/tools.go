@@ -197,7 +197,7 @@ func jenkinsStatus(ctx context.Context, repo *git.Repo, values config.Values, bu
 		if err != nil {
 			return "", err
 		}
-		result["selection"] = selection.Map()
+		result = jsonutil.Merge(result, selection.Map())
 	}
 
 	report, err := client.BuildReport(ctx, buildURL)
@@ -211,7 +211,6 @@ type gitLabCommitSelection struct {
 	client          *gitlab.Client
 	project         string
 	commit          string
-	checkoutCommit  string
 	mergeRequestIid any
 }
 
@@ -240,24 +239,16 @@ func selectGitLabCommit(ctx context.Context, repoContext git.Context, values con
 		client:          client,
 		project:         project,
 		commit:          commit,
-		checkoutCommit:  repoContext.Commit,
 		mergeRequestIid: compactMergeRequest["iid"],
 	}, nil
 }
 
 func (s gitLabCommitSelection) Map() map[string]any {
-	result := map[string]any{
-		"source": "worktree",
-		"commit": s.commit,
-	}
-	if s.checkoutCommit != "" && s.checkoutCommit != s.commit {
-		result["checkoutCommit"] = s.checkoutCommit
-	}
+	result := map[string]any{"commit": s.commit}
 	if s.mergeRequestIid != nil {
-		result["source"] = "merge_request"
-		result["mergeRequestIid"] = s.mergeRequestIid
+		result["mr"] = s.mergeRequestIid
 	}
-	return jsonutil.RemoveEmpty(result)
+	return result
 }
 
 // ciGateRuns exposes the structured GitLab records that bridge an MR commit to
@@ -279,10 +270,7 @@ func ciGateRuns(ctx context.Context, repo *git.Repo, values config.Values) (stri
 	for _, status := range statuses {
 		gates = append(gates, gateRun(status))
 	}
-	return jsonutil.Compact(map[string]any{
-		"selection": selection.Map(),
-		"gates":     gates,
-	})
+	return jsonutil.Compact(jsonutil.Merge(selection.Map(), map[string]any{"gates": gates}))
 }
 
 func gateRun(status map[string]any) map[string]any {

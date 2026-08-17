@@ -123,7 +123,7 @@ func TestSelectGitLabCommitUsesMergeRequestHeadSHA(t *testing.T) {
 	if buildURL != "https://jenkins.example/job/invoice/42/" {
 		t.Fatalf("build URL = %q", buildURL)
 	}
-	expected := map[string]any{"source": "merge_request", "commit": "mr-head", "checkoutCommit": "local-head", "mergeRequestIid": float64(7)}
+	expected := map[string]any{"commit": "mr-head", "mr": float64(7)}
 	if actual := selection.Map(); !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("selection = %#v, want %#v", actual, expected)
 	}
@@ -141,7 +141,7 @@ func TestSelectGitLabCommitFallsBackToCheckoutWithoutMergeRequest(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if actual := selection.Map(); !reflect.DeepEqual(actual, map[string]any{"source": "worktree", "commit": "local-head"}) {
+	if actual := selection.Map(); !reflect.DeepEqual(actual, map[string]any{"commit": "local-head"}) {
 		t.Fatalf("selection = %#v", actual)
 	}
 }
