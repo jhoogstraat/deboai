@@ -6,9 +6,15 @@
 
 *dev + boost + ai.*
 
+**Stop letting the LLM guess your workflow. Make it deterministic.**
+
+- **Fewer tokens.** Each command returns only the actionable data — no dumps, no scrolling, no noise to pay for.
+- **Deterministic workflows.** One question, one command, one shape of answer. Same input, same output, every run.
+- **A path worth following.** The tools are the workflow, so the assistant reaches for them instead of reverse-engineering how your setup works.
+
 `debo` gives developers and coding assistants fast, compact access to the tools around a Git repository: GitLab merge request reviews, Jenkins build failures, Jira tickets, Confluence pages, and SonarQube quality gates.
 
-Every command answers one question and prints compact JSON containing only actionable data. Use the CLI directly, or start its [Model Context Protocol](https://modelcontextprotocol.io) server with `--mcp`.
+Use the CLI directly, or start its [Model Context Protocol](https://modelcontextprotocol.io) server with `--mcp`.
 
 ## Install
 
