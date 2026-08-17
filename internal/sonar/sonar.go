@@ -114,14 +114,25 @@ func ProjectKeyFromURL(baseURL, targetURL string) (string, bool) {
 	return key, key != ""
 }
 
-// target selects the SonarQube analysis to query: either a long-lived branch
-// or a merge request analysed as a pull request.
-type target struct {
+// Target selects the SonarQube analysis Issues queries: either a long-lived
+// branch or a merge request analysed as a pull request.
+type Target struct {
 	branch      string
 	pullRequest string
 }
 
-func (t target) apply(query url.Values) {
+// Branch targets a long-lived branch analysis, used verbatim.
+func Branch(name string) Target {
+	return Target{branch: strings.TrimSpace(name)}
+}
+
+// PullRequest targets SonarQube's pull-request analysis of a merge request,
+// for projects that analyse merge requests instead of long-lived branches.
+func PullRequest(mergeRequestIid string) Target {
+	return Target{pullRequest: strings.TrimSpace(mergeRequestIid)}
+}
+
+func (t Target) apply(query url.Values) {
 	if t.pullRequest != "" {
 		query.Set("pullRequest", t.pullRequest)
 	} else {
@@ -147,29 +158,12 @@ func (c *Client) api(ctx context.Context, path string, query url.Values) (map[st
 	return result, nil
 }
 
-// IssuesForBranch returns the failed quality gate conditions, missing
-// new-code coverage, and confirmed/open issues for a long-lived branch
-// analysis.
-func (c *Client) IssuesForBranch(ctx context.Context, branch string) (map[string]any, error) {
-	branch = strings.TrimSpace(branch)
-	if branch == "" {
-		return nil, fmt.Errorf("a SonarQube branch name is required")
+// Issues returns the failed quality gate conditions, missing new-code
+// coverage, and confirmed/open issues for the given Target.
+func (c *Client) Issues(ctx context.Context, t Target) (map[string]any, error) {
+	if t.branch == "" && t.pullRequest == "" {
+		return nil, fmt.Errorf("a SonarQube branch or pull request is required")
 	}
-	return c.issuesFor(ctx, target{branch: branch})
-}
-
-// IssuesForPullRequest returns the same fields as IssuesForBranch, scoped to
-// SonarQube's pull-request analysis of the given merge request IID. Use this
-// for projects that analyse merge requests instead of long-lived branches.
-func (c *Client) IssuesForPullRequest(ctx context.Context, mergeRequestIid string) (map[string]any, error) {
-	mergeRequestIid = strings.TrimSpace(mergeRequestIid)
-	if mergeRequestIid == "" {
-		return nil, fmt.Errorf("a SonarQube pull request key is required")
-	}
-	return c.issuesFor(ctx, target{pullRequest: mergeRequestIid})
-}
-
-func (c *Client) issuesFor(ctx context.Context, t target) (map[string]any, error) {
 	if err := c.requireTarget(ctx, t); err != nil {
 		return nil, err
 	}
@@ -199,7 +193,7 @@ func (c *Client) issuesFor(ctx context.Context, t target) (map[string]any, error
 	}, nil
 }
 
-func (c *Client) requireTarget(ctx context.Context, t target) error {
+func (c *Client) requireTarget(ctx context.Context, t Target) error {
 	if t.pullRequest != "" {
 		return c.requirePullRequest(ctx, t.pullRequest)
 	}
@@ -232,7 +226,7 @@ func (c *Client) requirePullRequest(ctx context.Context, mergeRequestIid string)
 	return fmt.Errorf("SonarQube pull request not found: %s", mergeRequestIid)
 }
 
-func (c *Client) issues(ctx context.Context, t target) ([]any, error) {
+func (c *Client) issues(ctx context.Context, t Target) ([]any, error) {
 	issues := []any{}
 	for page := 1; ; page++ {
 		query := url.Values{
@@ -280,7 +274,7 @@ func hasFailedCoverageCondition(conditions []any) bool {
 
 // coverageFiles lists the new-code lines that are uncovered or only partially
 // covered, per file.
-func (c *Client) coverageFiles(ctx context.Context, t target) ([]any, error) {
+func (c *Client) coverageFiles(ctx context.Context, t Target) ([]any, error) {
 	components, err := c.uncoveredComponents(ctx, t)
 	if err != nil {
 		return nil, err
@@ -310,7 +304,7 @@ func (c *Client) coverageFiles(ctx context.Context, t target) ([]any, error) {
 	return coverageFiles, nil
 }
 
-func (c *Client) uncoveredComponents(ctx context.Context, t target) ([]any, error) {
+func (c *Client) uncoveredComponents(ctx context.Context, t Target) ([]any, error) {
 	components := []any{}
 	for page := 1; ; page++ {
 		query := url.Values{

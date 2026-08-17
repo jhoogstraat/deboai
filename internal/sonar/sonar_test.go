@@ -85,7 +85,7 @@ func TestIssuesForBranchReportsActionableCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	actual, err := client.IssuesForBranch(context.Background(), branch)
+	actual, err := client.Issues(context.Background(), Branch(branch))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestIssuesForBranchReportsActionableCoverage(t *testing.T) {
 		"issues": []any{},
 	}
 	if !reflect.DeepEqual(actual, expected) {
-		t.Fatalf("IssuesForBranch() = %#v, want %#v", actual, expected)
+		t.Fatalf("Issues() = %#v, want %#v", actual, expected)
 	}
 }
 
@@ -118,8 +118,8 @@ func TestIssuesForBranchRejectsUnknownBranches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.IssuesForBranch(context.Background(), "missing"); err == nil {
-		t.Fatal("IssuesForBranch() accepted a branch SonarQube does not analyse")
+	if _, err := client.Issues(context.Background(), Branch("missing")); err == nil {
+		t.Fatal("Issues() accepted a branch SonarQube does not analyse")
 	}
 }
 
@@ -152,7 +152,7 @@ func TestIssuesForPullRequestQueriesByMergeRequestIid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.IssuesForPullRequest(context.Background(), "7"); err != nil {
+	if _, err := client.Issues(context.Background(), PullRequest("7")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -167,8 +167,8 @@ func TestIssuesForPullRequestRejectsUnknownPullRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.IssuesForPullRequest(context.Background(), "7"); err == nil {
-		t.Fatal("IssuesForPullRequest() accepted a pull request SonarQube does not analyse")
+	if _, err := client.Issues(context.Background(), PullRequest("7")); err == nil {
+		t.Fatal("Issues() accepted a pull request SonarQube does not analyse")
 	}
 }
 

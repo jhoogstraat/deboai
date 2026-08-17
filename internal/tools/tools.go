@@ -334,7 +334,7 @@ func sonarIssues(ctx context.Context, repo *git.Repo, values config.Values, bran
 	switch {
 	case strings.TrimSpace(branch) != "":
 		branch = strings.TrimSpace(branch)
-		issues, err = client.IssuesForBranch(ctx, branch)
+		issues, err = client.Issues(ctx, sonar.Branch(branch))
 		result["branch"] = branch
 	default:
 		mergeRequestIid, mrErr := openMergeRequestIid(ctx, repoContext, values)
@@ -342,7 +342,7 @@ func sonarIssues(ctx context.Context, repo *git.Repo, values config.Values, bran
 			return "", mrErr
 		}
 		if mergeRequestIid != nil {
-			issues, err = client.IssuesForPullRequest(ctx, fmt.Sprint(mergeRequestIid))
+			issues, err = client.Issues(ctx, sonar.PullRequest(fmt.Sprint(mergeRequestIid)))
 			result["mr"] = mergeRequestIid
 		} else {
 			current, currentErr := repo.CurrentBranch(ctx)
@@ -352,7 +352,7 @@ func sonarIssues(ctx context.Context, repo *git.Repo, values config.Values, bran
 			if current = strings.TrimSpace(current); current == "" {
 				return "", fmt.Errorf("no active Git branch; pass a SonarQube branch name")
 			}
-			issues, err = client.IssuesForBranch(ctx, current)
+			issues, err = client.Issues(ctx, sonar.Branch(current))
 			result["branch"] = current
 		}
 	}
