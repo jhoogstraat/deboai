@@ -378,6 +378,9 @@ func sonarProjectKeyFromGitLab(ctx context.Context, repoContext git.Context, val
 	}
 	candidates := map[string]struct{}{}
 	for _, status := range statuses {
+		if !strings.Contains(strings.ToLower(jsonutil.String(status["name"])), "sonar") {
+			continue
+		}
 		if projectKey, ok := sonar.ProjectKeyFromURL(baseURL, jsonutil.String(status["target_url"])); ok {
 			candidates[projectKey] = struct{}{}
 		}

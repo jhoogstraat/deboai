@@ -215,6 +215,30 @@ func TestSonarProjectKeyFromGitLabRejectsAmbiguousStatuses(t *testing.T) {
 	}
 }
 
+func TestSonarProjectKeyFromGitLabIgnoresUnrelatedSonarLinks(t *testing.T) {
+	sonarServer := httptest.NewServer(http.NotFoundHandler())
+	defer sonarServer.Close()
+	gitLabServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case strings.HasSuffix(request.URL.Path, "/merge_requests"):
+			_ = json.NewEncoder(writer).Encode([]any{})
+		case strings.HasSuffix(request.URL.Path, "/statuses"):
+			_ = json.NewEncoder(writer).Encode([]any{map[string]any{
+				"name": "documentation", "target_url": sonarServer.URL + "/dashboard?id=acme%3Awiki",
+			}})
+		default:
+			http.Error(writer, "unexpected request: "+request.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer gitLabServer.Close()
+	values := config.Values{"SONAR_HOST_URL": sonarServer.URL, "GITLAB_API_URL": gitLabServer.URL, "GITLAB_TOKEN": "token"}
+
+	_, _, err := sonarProjectKeyFromGitLab(context.Background(), git.Context{Project: "acme/example", Branch: "feature/test", Commit: "local-head"}, values)
+	if err == nil || !strings.Contains(err.Error(), "no SonarQube project key") {
+		t.Fatalf("sonarProjectKeyFromGitLab() error = %v", err)
+	}
+}
+
 func TestGateRunNormalizesGitLabCommitStatus(t *testing.T) {
 	run := gateRun(map[string]any{
 		"name": "build", "sha": "abc123", "status": "failed", "target_url": "https://jenkins.example/42",

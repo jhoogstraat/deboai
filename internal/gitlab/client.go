@@ -79,32 +79,43 @@ func FromValues(values config.Values) (*Client, error) {
 // Request performs an API call. When optional is set, a 404 yields a nil body
 // instead of an error.
 func (c *Client) Request(ctx context.Context, method, path string, query url.Values, optional bool) ([]byte, error) {
-	response, err := httpx.Do(ctx, c.http, method, httpx.WithQuery(httpx.Join(c.baseURL, path), query), map[string]string{
-		"Accept":        "application/json",
-		"PRIVATE-TOKEN": c.token,
-	}, 0)
+	response, err := c.response(ctx, method, path, query, optional)
 	if err != nil {
 		return nil, err
 	}
 	if optional && response.Status == http.StatusNotFound {
 		return nil, nil
 	}
-	if !response.OK() {
-		return nil, httpx.APIError("GitLab", response.Status, response.Body)
-	}
 	return response.Body, nil
 }
 
-func (c *Client) requestList(ctx context.Context, path string, query url.Values, description string) ([]map[string]any, error) {
-	body, err := c.Request(ctx, http.MethodGet, path, query, false)
+func (c *Client) response(ctx context.Context, method, path string, query url.Values, optional bool) (httpx.Response, error) {
+	response, err := httpx.Do(ctx, c.http, method, httpx.WithQuery(httpx.Join(c.baseURL, path), query), map[string]string{
+		"Accept":        "application/json",
+		"PRIVATE-TOKEN": c.token,
+	}, 0)
 	if err != nil {
-		return nil, err
+		return httpx.Response{}, err
+	}
+	if optional && response.Status == http.StatusNotFound {
+		return response, nil
+	}
+	if !response.OK() {
+		return httpx.Response{}, httpx.APIError("GitLab", response.Status, response.Body)
+	}
+	return response, nil
+}
+
+func (c *Client) requestList(ctx context.Context, path string, query url.Values, description string) ([]map[string]any, bool, error) {
+	response, err := c.response(ctx, http.MethodGet, path, query, false)
+	if err != nil {
+		return nil, false, err
 	}
 	var items []map[string]any
-	if err := httpx.DecodeJSON(body, &items, description); err != nil {
-		return nil, err
+	if err := httpx.DecodeJSON(response.Body, &items, description); err != nil {
+		return nil, false, err
 	}
-	return items, nil
+	return items, response.Header.Get("X-Next-Page") != "", nil
 }
 
 // CurrentUsername returns the username of the authenticated account.
@@ -151,12 +162,12 @@ func (c *Client) MergeRequests(ctx context.Context, repo git.Context, allStates 
 	var matches []map[string]any
 	for page := 1; ; page++ {
 		query.Set("page", fmt.Sprint(page))
-		pageMatches, err := c.requestList(ctx, "/projects/"+ProjectPath(repo.Project)+"/merge_requests", query, "GitLab merge requests")
+		pageMatches, hasNext, err := c.requestList(ctx, "/projects/"+ProjectPath(repo.Project)+"/merge_requests", query, "GitLab merge requests")
 		if err != nil {
 			return nil, err
 		}
 		matches = append(matches, pageMatches...)
-		if len(pageMatches) < pageSize {
+		if !hasNext && len(pageMatches) < pageSize {
 			return matches, nil
 		}
 	}
@@ -260,12 +271,12 @@ func (c *Client) Discussions(ctx context.Context, repo git.Context, mergeRequest
 	var all []map[string]any
 	for page := 1; ; page++ {
 		query := url.Values{"per_page": {fmt.Sprint(pageSize)}, "page": {fmt.Sprint(page)}}
-		pageItems, err := c.requestList(ctx, path, query, "GitLab discussions")
+		pageItems, hasNext, err := c.requestList(ctx, path, query, "GitLab discussions")
 		if err != nil {
 			return nil, err
 		}
 		all = append(all, pageItems...)
-		if len(pageItems) < pageSize {
+		if !hasNext && len(pageItems) < pageSize {
 			return all, nil
 		}
 	}
@@ -279,12 +290,12 @@ func (c *Client) CommitStatuses(ctx context.Context, project, commit string) ([]
 	statuses := []map[string]any{}
 	for page := 1; ; page++ {
 		query := url.Values{"per_page": {fmt.Sprint(pageSize)}, "page": {fmt.Sprint(page)}}
-		pageStatuses, err := c.requestList(ctx, path, query, "GitLab commit statuses")
+		pageStatuses, hasNext, err := c.requestList(ctx, path, query, "GitLab commit statuses")
 		if err != nil {
 			return nil, err
 		}
 		statuses = append(statuses, pageStatuses...)
-		if len(pageStatuses) < pageSize {
+		if !hasNext && len(pageStatuses) < pageSize {
 			break
 		}
 	}

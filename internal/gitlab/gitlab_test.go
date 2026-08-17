@@ -249,6 +249,25 @@ func TestCommitStatusesPaginates(t *testing.T) {
 	}
 }
 
+func TestCommitStatusesFollowsGitLabPaginationHeader(t *testing.T) {
+	requests := 0
+	client := testClient(t, func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.URL.Query().Get("page") == "1" {
+			writer.Header().Set("X-Next-Page", "2")
+		}
+		write(writer, []any{map[string]any{"name": fmt.Sprintf("gate-%d", requests), "status": "success"}})
+	})
+
+	statuses, err := client.CommitStatuses(context.Background(), "acme/example", "abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statuses) != 2 || requests != 2 {
+		t.Fatalf("CommitStatuses() returned %d statuses in %d requests", len(statuses), requests)
+	}
+}
+
 func TestCommitStatusWithoutMatchingStatus(t *testing.T) {
 	client := testClient(t, func(writer http.ResponseWriter, _ *http.Request) {
 		write(writer, []any{})

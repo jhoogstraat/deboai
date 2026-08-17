@@ -2,6 +2,7 @@ package jenkins
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"regexp"
 	"slices"
@@ -39,6 +40,9 @@ func (c *Client) BuildReport(ctx context.Context, buildURL string) (map[string]a
 	normalized, err := NormalizeBuildURL(buildURL)
 	if err != nil {
 		return nil, err
+	}
+	if !c.acceptsBuildURL(normalized) {
+		return nil, fmt.Errorf("Jenkins build URL is outside JENKINS_URL: %s", buildURL)
 	}
 	client := c.forBuild(normalized)
 

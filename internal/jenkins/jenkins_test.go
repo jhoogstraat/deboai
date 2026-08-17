@@ -131,6 +131,21 @@ func TestBuildReportReportsRemovedBuilds(t *testing.T) {
 	}
 }
 
+func TestBuildReportRejectsForeignBuildURL(t *testing.T) {
+	jenkins := httptest.NewServer(http.NotFoundHandler())
+	defer jenkins.Close()
+	foreign := httptest.NewServer(http.NotFoundHandler())
+	defer foreign.Close()
+
+	client, err := New(Options{BaseURL: jenkins.URL, HTTPClient: jenkins.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.BuildReport(context.Background(), foreign.URL+"/job/build/42/"); err == nil {
+		t.Fatal("BuildReport() accepted a build URL outside Jenkins")
+	}
+}
+
 func write(writer http.ResponseWriter, value any) {
 	_ = json.NewEncoder(writer).Encode(value)
 }
