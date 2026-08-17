@@ -35,13 +35,13 @@ fails when several open merge requests exist for the branch.
 
 ```json
 {
-  "merge_request": { "iid": 7, "title": "…", "state": "opened", "draft": false, "source_branch": "…", "target_branch": "…", "sha": "…", "web_url": "…" },
+  "mr": { "iid": 7, "title": "…", "state": "opened", "draft": false, "source_branch": "…", "target_branch": "…", "sha": "…", "web_url": "…" },
   "review": { "id": 3, "author": "reviewer", "created_at": "…", "body": "…", "path": "internal/app.go", "line": 12, "position_type": "text", "base_sha": "…", "head_sha": "…", "resolvable": true, "resolved": false }
 }
 ```
 
 When HEAD is detached or the branch has no open merge request, both
-`merge_request` and `review` are `null`.
+`mr` and `review` are `null`.
 
 `review` is `null` when no unresolved comment is left by anyone other than the
 authenticated user and the accounts listed in `GITLAB_IGNORED_REVIEW_AUTHORS`.
@@ -51,9 +51,9 @@ the newest one wins.
 ## `jenkins`
 
 Without `build_url`, the build is located through the GitLab commit status
-named by `JENKINS_BUILD_STATUS_NAME` (default `build`) on the selected merge
-request's current head SHA. When no merge request is selected, it falls back to
-the worktree's checked out commit. This makes the external Jenkins build
+named by `JENKINS_BUILD_STATUS_NAME` (default `build`) on the open merge
+request's current head SHA. When the branch has no open merge request, it
+falls back to the worktree's checked out commit. This makes the external Jenkins build
 discoverable even when the local checkout is stale. The top-level `commit`
 records which commit the pipeline ran on; `mr` carries the merge request IID
 when that commit came from one. With an explicit `build_url`, both are omitted
@@ -80,8 +80,8 @@ rerun.
 ## `ci`
 
 Returns the latest status for every CI gate published through GitLab's
-commit-status API for the selected merge request's current head SHA; it falls
-back to the worktree commit when no merge request is selected. Superseded
+commit-status API for the open merge request's current head SHA; it falls
+back to the worktree commit when the branch has no open merge request. Superseded
 status attempts are omitted. Each record contains the gate name, exact
 commit SHA, current state, run URL, timestamps, and—when GitLab provides
 them—the status ID, pipeline ID, and author. This is the canonical structured

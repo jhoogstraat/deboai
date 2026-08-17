@@ -80,7 +80,7 @@ func TestReviewContextAllowsNoMergeRequest(t *testing.T) {
 	if requests != 1 {
 		t.Fatalf("ReviewContext() made %d requests, want only the merge request lookup", requests)
 	}
-	if actual["merge_request"] != nil || actual["review"] != nil {
+	if actual["mr"] != nil || actual["review"] != nil {
 		t.Fatalf("ReviewContext() = %#v, want nil merge request and review", actual)
 	}
 }
@@ -106,7 +106,7 @@ func TestReviewContextIncludesAvailableMergeRequestReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mergeRequest, _ := actual["merge_request"].(map[string]any)
+	mergeRequest, _ := actual["mr"].(map[string]any)
 	if mergeRequest["iid"] != float64(7) {
 		t.Fatalf("ReviewContext() merge request = %#v", mergeRequest)
 	}
@@ -125,47 +125,37 @@ func TestReviewContextAllowsDetachedHead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if actual["merge_request"] != nil || actual["review"] != nil {
+	if actual["mr"] != nil || actual["review"] != nil {
 		t.Fatalf("ReviewContext() = %#v, want nil MR data", actual)
 	}
 }
 
-func TestMergeRequestLookupPrefersOpenMergeRequests(t *testing.T) {
+func TestOpenMergeRequestReturnsNilOnDetachedHead(t *testing.T) {
 	client := testClient(t, func(writer http.ResponseWriter, _ *http.Request) {
-		write(writer, []any{
-			map[string]any{"iid": float64(1), "state": "closed", "updated_at": "2026-01-09"},
-			map[string]any{"iid": float64(2), "state": "opened", "updated_at": "2026-01-02"},
-		})
+		t.Fatal("OpenMergeRequest() queried GitLab for a detached HEAD")
 	})
-
-	selected, lookup, err := client.MergeRequestLookup(context.Background(), repo)
+	mergeRequest, err := client.OpenMergeRequest(context.Background(), git.Context{Project: "acme/example"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	merged, _ := selected.(map[string]any)
-	if merged["iid"] != float64(2) {
-		t.Fatalf("MergeRequestLookup() selected %#v, want the open merge request", merged)
-	}
-	if lookup["reason"] != "open_merge_request" || lookup["open_matches"] != 1 || lookup["all_matches"] != 2 {
-		t.Fatalf("MergeRequestLookup() lookup = %#v", lookup)
-	}
-	related, _ := lookup["related_merge_requests"].([]any)
-	if len(related) != 2 {
-		t.Fatalf("MergeRequestLookup() related = %#v, want both candidates", related)
+	if mergeRequest != nil {
+		t.Fatalf("OpenMergeRequest() = %#v on a detached HEAD, want nil", mergeRequest)
 	}
 }
 
-func TestMergeRequestLookupOnDetachedHead(t *testing.T) {
-	client := testClient(t, nil)
-	selected, lookup, err := client.MergeRequestLookup(context.Background(), git.Context{Project: "acme/example"})
+func TestOpenMergeRequestIgnoresClosedAndMergedRequests(t *testing.T) {
+	client := testClient(t, func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Query().Get("state") != "opened" {
+			t.Fatalf("OpenMergeRequest() queried state=%q, want opened", request.URL.Query().Get("state"))
+		}
+		write(writer, []any{})
+	})
+	mergeRequest, err := client.OpenMergeRequest(context.Background(), repo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if selected != nil {
-		t.Fatalf("MergeRequestLookup() selected %#v on a detached HEAD", selected)
-	}
-	if lookup["reason"] != "detached_head" {
-		t.Fatalf("MergeRequestLookup() lookup = %#v, want a detached_head reason", lookup)
+	if mergeRequest != nil {
+		t.Fatalf("OpenMergeRequest() = %#v, want nil when only closed/merged requests exist", mergeRequest)
 	}
 }
 

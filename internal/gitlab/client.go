@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 
 	"github.com/jhoogstraat/deboai/internal/config"
 	"github.com/jhoogstraat/deboai/internal/git"
@@ -190,78 +189,6 @@ func (c *Client) OpenMergeRequest(ctx context.Context, repo git.Context) (map[st
 }
 
 var errAmbiguousMergeRequest = fmt.Errorf("more than one open GitLab merge request exists for the current branch")
-
-// MergeRequestLookup reports which merge request was selected for the branch of
-// repo and why, together with the other candidates.
-func (c *Client) MergeRequestLookup(ctx context.Context, repo git.Context) (selected any, lookup map[string]any, err error) {
-	lookup = map[string]any{
-		"project":       repo.Project,
-		"source_branch": jsonutil.Nullable(repo.Branch),
-		"selection":     "open_preferred",
-	}
-	if repo.Branch == "" {
-		lookup["all_matches"] = 0
-		lookup["open_matches"] = 0
-		lookup["reason"] = "detached_head"
-		lookup["related_merge_requests"] = []any{}
-		return nil, lookup, nil
-	}
-
-	matches, err := c.MergeRequests(ctx, repo, true)
-	if err != nil {
-		return nil, nil, err
-	}
-	opened := make([]map[string]any, 0)
-	for _, match := range matches {
-		if match["state"] == "opened" {
-			opened = append(opened, match)
-		}
-	}
-	if len(opened) > 1 {
-		return nil, nil, errAmbiguousMergeRequest
-	}
-
-	ordered := append([]map[string]any(nil), matches...)
-	sort.SliceStable(ordered, func(left, right int) bool {
-		return fmt.Sprint(ordered[left]["updated_at"]) > fmt.Sprint(ordered[right]["updated_at"])
-	})
-
-	var candidate map[string]any
-	switch {
-	case len(opened) > 0:
-		candidate = opened[0]
-	case len(ordered) > 0:
-		candidate = ordered[0]
-	}
-
-	related := make([]any, 0, len(ordered))
-	for _, match := range ordered {
-		related = append(related, CompactMergeRequest(match))
-	}
-	lookup["all_matches"] = len(matches)
-	lookup["open_matches"] = len(opened)
-	lookup["reason"] = lookupReason(candidate, len(matches))
-	lookup["related_merge_requests"] = related
-	if candidate == nil {
-		lookup["selected_state"] = nil
-		return nil, lookup, nil
-	}
-	lookup["selected_state"] = candidate["state"]
-	return CompactMergeRequest(candidate), lookup, nil
-}
-
-func lookupReason(candidate map[string]any, matches int) string {
-	switch {
-	case candidate != nil && candidate["state"] == "opened":
-		return "open_merge_request"
-	case candidate != nil:
-		return "matching_non_open_merge_request"
-	case matches > 0:
-		return "no_selectable_merge_request"
-	default:
-		return "no_matching_merge_request"
-	}
-}
 
 // Discussions returns every discussion thread of a merge request.
 func (c *Client) Discussions(ctx context.Context, repo git.Context, mergeRequest map[string]any) ([]map[string]any, error) {

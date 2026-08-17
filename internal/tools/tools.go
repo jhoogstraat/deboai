@@ -223,7 +223,7 @@ func selectGitLabCommit(ctx context.Context, repoContext git.Context, values con
 	if project == "" {
 		return gitLabCommitSelection{}, fmt.Errorf("no GitLab project found for the origin remote; set GITLAB_PROJECT_ID")
 	}
-	mergeRequest, _, err := client.MergeRequestLookup(ctx, repoContext)
+	mergeRequest, err := client.OpenMergeRequest(ctx, repoContext)
 	if err != nil {
 		return gitLabCommitSelection{}, err
 	}
