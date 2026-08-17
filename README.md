@@ -41,7 +41,7 @@ Run `debo` or `debo --help` to see the command list.
 | `debo jenkins [build-url]` | Build result, failed and skipped stages, failing tests, and console highlights. Without a URL, locates the build for the selected merge-request head or current commit through GitLab. |
 | `debo jira <ticket> [--attachment ID-OR-NAME]` | Compact Jira issue fields, comments, links, and attachments. Images and an explicitly selected attachment are downloaded into the selected worktree. |
 | `debo confluence <page-or-url> [--attachment ID-OR-NAME]` | Compact Confluence page metadata and plain-text body, optionally downloading one attachment into the selected worktree. |
-| `debo sonar [branch]` | Failed quality-gate conditions, uncovered new-code lines, and confirmed or open issues. Defaults to the current branch. |
+| `debo sonar [branch]` | Failed quality-gate conditions, uncovered new-code lines, and confirmed or open issues. Without `branch`, uses the open GitLab merge request's pull-request analysis when one exists, otherwise the current branch. |
 
 Every command accepts `--worktree PATH` (or `-w PATH`). Without it, `DEBOAI_REPOSITORY_ROOT` or the current working directory is used.
 
@@ -93,7 +93,7 @@ Each integration is configured independently and only fails the command that nee
 | Jenkins | `JENKINS_URL`, `JENKINS_USER`, `JENKINS_API_TOKEN` | `JENKINS_BUILD_STATUS_NAME` |
 | Jira | `JIRA_URL`, `JIRA_API_TOKEN` | `JIRA_API_PATH`, `JIRA_BROWSE_PATH`, `JIRA_COOKIE`, `JIRA_ATTACHMENT_DIR`, `JIRA_STATUS_NAMES` |
 | Confluence | `CONFLUENCE_URL`, `CONFLUENCE_API_TOKEN` | `CONFLUENCE_USER`, `CONFLUENCE_API_PATH`, `CONFLUENCE_COOKIE`, `CONFLUENCE_ATTACHMENT_DIR` |
-| SonarQube | `SONAR_HOST_URL`, `SONAR_TOKEN` | `SONAR_PROJECT_KEY`, `SONAR_BRANCH_PREFIX` |
+| SonarQube | `SONAR_HOST_URL`, `SONAR_TOKEN` | `SONAR_PROJECT_KEY` |
 
 `SONARQUBE_CLI_SERVER` and `SONARQUBE_CLI_TOKEN` are accepted as aliases for the SonarQube host and token.
 When `SONAR_PROJECT_KEY` is omitted, `sonar` can infer it from the `id`

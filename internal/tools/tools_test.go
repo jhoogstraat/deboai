@@ -146,6 +146,124 @@ func TestSelectGitLabCommitFallsBackToCheckoutWithoutMergeRequest(t *testing.T) 
 	}
 }
 
+func TestOpenMergeRequestIidReturnsNilWithoutGitLabConfig(t *testing.T) {
+	mergeRequestIid, err := openMergeRequestIid(context.Background(), git.Context{Branch: "feature/test"}, config.Values{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mergeRequestIid != nil {
+		t.Fatalf("openMergeRequestIid() = %v, want nil without GitLab configuration", mergeRequestIid)
+	}
+}
+
+func TestOpenMergeRequestIidReturnsTheOpenMergeRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(writer).Encode([]any{map[string]any{"iid": float64(7), "state": "opened"}})
+	}))
+	defer server.Close()
+	values := config.Values{"GITLAB_API_URL": server.URL, "GITLAB_TOKEN": "token"}
+
+	mergeRequestIid, err := openMergeRequestIid(context.Background(), git.Context{Project: "acme/example", Branch: "feature/test"}, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mergeRequestIid != float64(7) {
+		t.Fatalf("openMergeRequestIid() = %v, want 7", mergeRequestIid)
+	}
+}
+
+func TestSonarIssuesUsesPullRequestModeForOpenMergeRequest(t *testing.T) {
+	root := testRepository(t, "feature/test")
+	repo := git.Open(root)
+
+	sonarServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if request.URL.Query().Get("branch") != "" {
+			t.Fatalf("unexpected branch query in pull-request mode: %s", request.URL.RawQuery)
+		}
+		switch request.URL.Path {
+		case "/api/project_pull_requests/list":
+			write(writer, map[string]any{"pullRequests": []any{map[string]any{"key": "7"}}})
+		case "/api/qualitygates/project_status":
+			write(writer, map[string]any{"projectStatus": map[string]any{"conditions": []any{}}})
+		case "/api/issues/search":
+			write(writer, map[string]any{"issues": []any{}, "paging": map[string]any{"total": 0}})
+		default:
+			http.Error(writer, "unexpected endpoint: "+request.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer sonarServer.Close()
+	gitLabServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(writer).Encode([]any{map[string]any{"iid": float64(7), "state": "opened"}})
+	}))
+	defer gitLabServer.Close()
+	values := config.Values{
+		"SONAR_HOST_URL":    sonarServer.URL,
+		"SONAR_TOKEN":       "token",
+		"SONAR_PROJECT_KEY": "acme:example",
+		"GITLAB_API_URL":    gitLabServer.URL,
+		"GITLAB_TOKEN":      "token",
+	}
+
+	result, err := sonarIssues(context.Background(), repo, values, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(result), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["mr"] != float64(7) {
+		t.Fatalf("sonarIssues() = %#v, want mr 7", decoded)
+	}
+	if _, ok := decoded["branch"]; ok {
+		t.Fatalf("sonarIssues() = %#v, want no branch key in pull-request mode", decoded)
+	}
+}
+
+func TestSonarIssuesFallsBackToLocalBranchWithoutOpenMergeRequest(t *testing.T) {
+	root := testRepository(t, "feature/test")
+	repo := git.Open(root)
+
+	sonarServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if request.URL.Query().Get("pullRequest") != "" {
+			t.Fatalf("unexpected pullRequest query in branch mode: %s", request.URL.RawQuery)
+		}
+		switch request.URL.Path {
+		case "/api/project_branches/list":
+			write(writer, map[string]any{"branches": []any{map[string]any{"name": "feature/test"}}})
+		case "/api/qualitygates/project_status":
+			write(writer, map[string]any{"projectStatus": map[string]any{"conditions": []any{}}})
+		case "/api/issues/search":
+			write(writer, map[string]any{"issues": []any{}, "paging": map[string]any{"total": 0}})
+		default:
+			http.Error(writer, "unexpected endpoint: "+request.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer sonarServer.Close()
+	values := config.Values{
+		"SONAR_HOST_URL":    sonarServer.URL,
+		"SONAR_TOKEN":       "token",
+		"SONAR_PROJECT_KEY": "acme:example",
+	}
+
+	result, err := sonarIssues(context.Background(), repo, values, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(result), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["branch"] != "feature/test" {
+		t.Fatalf("sonarIssues() = %#v, want branch feature/test", decoded)
+	}
+	if _, ok := decoded["mr"]; ok {
+		t.Fatalf("sonarIssues() = %#v, want no mr key in branch mode", decoded)
+	}
+}
+
 func TestSonarProjectKeyFromGitLabUsesMergeRequestHeadStatus(t *testing.T) {
 	sonarServer := httptest.NewServer(http.NotFoundHandler())
 	defer sonarServer.Close()
@@ -250,5 +368,37 @@ func TestGateRunNormalizesGitLabCommitStatus(t *testing.T) {
 	}
 	if !reflect.DeepEqual(run, expected) {
 		t.Fatalf("gateRun() = %#v, want %#v", run, expected)
+	}
+}
+
+func write(writer http.ResponseWriter, value any) {
+	_ = json.NewEncoder(writer).Encode(value)
+}
+
+func testRepository(t *testing.T, branch string) string {
+	t.Helper()
+	root := t.TempDir()
+	runGit(t, root, "init", "--initial-branch", branch)
+	runGit(t, root, "config", "user.email", "test@example.com")
+	runGit(t, root, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "README.md")
+	runGit(t, root, "commit", "-m", "initial")
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func runGit(t *testing.T, directory string, arguments ...string) {
+	t.Helper()
+	command := exec.Command("git", arguments...)
+	command.Dir = directory
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(arguments, " "), err, output)
 	}
 }

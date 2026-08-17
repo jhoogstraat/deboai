@@ -115,7 +115,7 @@ func All() []Definition {
 			Name:        "sonar",
 			Description: "Return failed quality-gate conditions, actionable new-code coverage lines, and confirmed/open SonarQube issues.",
 			Arguments: []Argument{
-				{Name: "branch", Description: "Optional Git branch name. Omit it to use the current branch."},
+				{Name: "branch", Description: "Optional Git branch name. Omit it to prefer the open GitLab merge request's pull-request analysis, falling back to the current branch."},
 				worktreeArgument,
 			},
 			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, arguments Arguments) (string, error) {
@@ -311,17 +311,16 @@ func confluencePage(ctx context.Context, repo *git.Repo, values config.Values, p
 	return jsonutil.Compact(result)
 }
 
+// sonarIssues prefers SonarQube's pull-request analysis of the open GitLab
+// merge request for the current branch, since that is what the MR's own
+// quality gate reflects. A branch name, explicit or the current checkout,
+// is used only when no open merge request is selected.
 func sonarIssues(ctx context.Context, repo *git.Repo, values config.Values, branch string) (string, error) {
-	if strings.TrimSpace(branch) == "" {
-		current, err := repo.CurrentBranch(ctx)
-		if err != nil {
-			return "", err
-		}
-		if branch = strings.TrimSpace(current); branch == "" {
-			return "", fmt.Errorf("no active Git branch; pass a SonarQube branch name")
-		}
+	repoContext, err := repo.Context(ctx)
+	if err != nil {
+		return "", err
 	}
-	projectKey, source, err := sonarProjectKey(ctx, repo, values)
+	projectKey, source, err := sonarProjectKey(ctx, repoContext, values)
 	if err != nil {
 		return "", err
 	}
@@ -329,24 +328,70 @@ func sonarIssues(ctx context.Context, repo *git.Repo, values config.Values, bran
 	if err != nil {
 		return "", err
 	}
-	issues, err := client.Issues(ctx, branch)
+
+	result := map[string]any{}
+	var issues map[string]any
+	switch {
+	case strings.TrimSpace(branch) != "":
+		branch = strings.TrimSpace(branch)
+		issues, err = client.IssuesForBranch(ctx, branch)
+		result["branch"] = branch
+	default:
+		mergeRequestIid, mrErr := openMergeRequestIid(ctx, repoContext, values)
+		if mrErr != nil {
+			return "", mrErr
+		}
+		if mergeRequestIid != nil {
+			issues, err = client.IssuesForPullRequest(ctx, fmt.Sprint(mergeRequestIid))
+			result["mr"] = mergeRequestIid
+		} else {
+			current, currentErr := repo.CurrentBranch(ctx)
+			if currentErr != nil {
+				return "", currentErr
+			}
+			if current = strings.TrimSpace(current); current == "" {
+				return "", fmt.Errorf("no active Git branch; pass a SonarQube branch name")
+			}
+			issues, err = client.IssuesForBranch(ctx, current)
+			result["branch"] = current
+		}
+	}
 	if err != nil {
 		return "", err
 	}
-	issues["projectKey"] = projectKey
-	issues["projectKeySource"] = source
-	return jsonutil.Compact(issues)
+	result["projectKey"] = projectKey
+	result["projectKeySource"] = source
+	for key, value := range issues {
+		result[key] = value
+	}
+	return jsonutil.Compact(result)
+}
+
+// openMergeRequestIid returns the open GitLab merge request IID for the
+// current branch, or nil when GitLab is not configured or there is none.
+func openMergeRequestIid(ctx context.Context, repoContext git.Context, values config.Values) (any, error) {
+	if values.Value("GITLAB_API_URL") == "" || values.Value("GITLAB_TOKEN") == "" {
+		return nil, nil
+	}
+	client, err := gitlab.FromValues(values)
+	if err != nil {
+		return nil, err
+	}
+	mergeRequest, err := client.OpenMergeRequest(ctx, repoContext)
+	if err != nil {
+		return nil, err
+	}
+	if mergeRequest == nil {
+		return nil, nil
+	}
+	return mergeRequest["iid"], nil
 }
 
 // sonarProjectKey uses explicit configuration first. When it is absent, it
 // accepts only a Sonar URL on a GitLab status for the selected MR head SHA.
-func sonarProjectKey(ctx context.Context, repo *git.Repo, values config.Values) (string, string, error) {
+func sonarProjectKey(ctx context.Context, repoContext git.Context, values config.Values) (string, string, error) {
 	if projectKey := values.Value("SONAR_PROJECT_KEY"); projectKey != "" {
 		return projectKey, "environment", nil
-	}
-	repoContext, err := repo.Context(ctx)
-	if err != nil {
-		return "", "", err
 	}
 	return sonarProjectKeyFromGitLab(ctx, repoContext, values)
 }

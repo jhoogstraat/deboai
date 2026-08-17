@@ -146,18 +146,26 @@ must be selected by ID.
 
 ## `sonar`
 
-Takes an optional `branch`, defaulting to the selected worktree's current branch. The name is
-prefixed with `SONAR_BRANCH_PREFIX` (default `origin/`) unless it already
-carries it, and must be a branch SonarQube has analysed.
+Takes an optional `branch`. When given, it is used verbatim — no prefix is
+added — and must name a branch SonarQube has analysed.
 
-`SONAR_PROJECT_KEY` is preferred. If it is not configured, the tool examines
-GitLab statuses for the selected merge request's current head SHA and accepts a
-project key only from the `id` parameter of a URL on the configured SonarQube
-host. It refuses missing or ambiguous candidates rather than selecting a bot
-comment or an arbitrary external link.
+Without `branch`, it prefers SonarQube's pull-request analysis of the open
+GitLab merge request for the current branch, since that is the same gate
+GitLab's own merge-request widget shows and its new-code scope matches the
+MR diff. When there is no open merge request, it falls back to the current
+branch, used verbatim. Either way, the resolved target is reported as
+top-level `mr` (the merge request IID) or `branch`.
+
+`SONAR_PROJECT_KEY` is preferred for the project key. If it is not
+configured, the tool examines GitLab statuses for the selected merge
+request's current head SHA and accepts a project key only from the `id`
+parameter of a URL on the configured SonarQube host. It refuses missing or
+ambiguous candidates rather than selecting a bot comment or an arbitrary
+external link.
 
 ```json
 {
+  "mr": 7,
   "projectKey": "acme:example",
   "projectKeySource": "environment",
   "failedConditions": [{ "status": "ERROR", "metricKey": "new_branch_coverage", "comparator": "LT", "errorThreshold": "70", "actualValue": "50.0" }],
@@ -166,7 +174,8 @@ comment or an arbitrary external link.
 }
 ```
 
-When inferred, `projectKeySource` is `gitlab_commit_status`.
+`mr` is replaced by `branch` when there is no open merge request. When the
+project key is inferred, `projectKeySource` is `gitlab_commit_status`.
 
 `coverageFiles` is only populated when a coverage condition actually failed,
 and lists new-code lines only. `issues` covers the new code period and is
