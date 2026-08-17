@@ -42,7 +42,7 @@ func (c *Client) BuildReport(ctx context.Context, buildURL string) (map[string]a
 		return nil, err
 	}
 	if !c.acceptsBuildURL(normalized) {
-		return nil, fmt.Errorf("Jenkins build URL is outside JENKINS_URL: %s", buildURL)
+		return nil, fmt.Errorf("build URL is outside JENKINS_URL: %s", buildURL)
 	}
 	client := c.forBuild(normalized)
 
