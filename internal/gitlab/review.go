@@ -13,34 +13,28 @@ import (
 
 const maxReviewBodyLength = 4000
 
-// ReviewContext returns the merge request and latest actionable review comment
-// for the current branch when an open merge request exists.
-func (c *Client) ReviewContext(ctx context.Context, repo git.Context) (map[string]any, error) {
-	result := map[string]any{
-		"mr":     nil,
-		"review": nil,
-	}
-	if repo.Branch == "" {
-		return result, nil
-	}
+// OpenChange returns the compact open merge request for the branch of repo, or
+// nil when there is none.
+func (c *Client) OpenChange(ctx context.Context, repo git.Context) (map[string]any, error) {
 	mergeRequest, err := c.OpenMergeRequest(ctx, repo)
-	if err != nil {
+	if err != nil || mergeRequest == nil {
 		return nil, err
 	}
-	if mergeRequest == nil {
-		return result, nil
-	}
+	return CompactMergeRequest(mergeRequest), nil
+}
+
+// LatestReview returns the latest actionable review comment on change in
+// compact form, or nil when there is none.
+func (c *Client) LatestReview(ctx context.Context, repo git.Context, change map[string]any) (any, error) {
 	username, err := c.CurrentUsername(ctx)
 	if err != nil {
 		return nil, err
 	}
-	discussions, err := c.Discussions(ctx, repo, mergeRequest)
+	discussions, err := c.Discussions(ctx, repo, change)
 	if err != nil {
 		return nil, err
 	}
-	result["mr"] = CompactMergeRequest(mergeRequest)
-	result["review"] = CompactReview(c.latestReview(discussions, username))
-	return result, nil
+	return CompactReview(c.latestReview(discussions, username)), nil
 }
 
 // CompactMergeRequest reduces a merge request to the fields worth reporting.

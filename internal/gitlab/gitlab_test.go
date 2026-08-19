@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/jhoogstraat/deboai/internal/git"
@@ -66,67 +65,76 @@ func TestLatestReviewPrefersPositionedUnresolvedNotes(t *testing.T) {
 	}
 }
 
-func TestReviewContextAllowsNoMergeRequest(t *testing.T) {
-	requests := 0
+func TestOpenChangeCompactsTheOpenMergeRequest(t *testing.T) {
 	client := testClient(t, func(writer http.ResponseWriter, _ *http.Request) {
-		requests++
-		write(writer, []any{})
+		write(writer, []any{map[string]any{"iid": float64(7), "title": "Add feature", "state": "opened", "ignored": true}})
 	})
 
-	actual, err := client.ReviewContext(context.Background(), repo)
+	change, err := client.OpenChange(context.Background(), repo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if requests != 1 {
-		t.Fatalf("ReviewContext() made %d requests, want only the merge request lookup", requests)
+	if change["iid"] != float64(7) || change["title"] != "Add feature" {
+		t.Fatalf("OpenChange() = %#v", change)
 	}
-	if actual["mr"] != nil || actual["review"] != nil {
-		t.Fatalf("ReviewContext() = %#v, want nil merge request and review", actual)
+	if _, ok := change["ignored"]; ok {
+		t.Fatalf("OpenChange() kept an unexpected field: %#v", change)
 	}
 }
 
-func TestReviewContextIncludesAvailableMergeRequestReview(t *testing.T) {
+func TestOpenChangeReturnsNilWithoutOpenMergeRequest(t *testing.T) {
+	client := testClient(t, nil)
+	change, err := client.OpenChange(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if change != nil {
+		t.Fatalf("OpenChange() = %#v, want nil", change)
+	}
+}
+
+func TestLatestReviewCompactsTheActionableNote(t *testing.T) {
 	client := testClient(t, func(writer http.ResponseWriter, request *http.Request) {
-		switch {
-		case strings.HasSuffix(request.URL.Path, "/merge_requests"):
-			write(writer, []any{map[string]any{"iid": float64(7), "title": "Add feature", "state": "opened"}})
-		case request.URL.Path == "/user":
+		if request.URL.Path == "/user" {
 			write(writer, map[string]any{"username": "me"})
-		default:
-			write(writer, []any{map[string]any{
-				"notes": []any{map[string]any{
-					"id": float64(3), "body": "Please fix this", "created_at": "2026-01-01",
-					"author": map[string]any{"username": "reviewer"},
-				}},
-			}})
+			return
 		}
+		write(writer, []any{map[string]any{
+			"notes": []any{map[string]any{
+				"id": float64(3), "body": "Please fix this", "created_at": "2026-01-01",
+				"author": map[string]any{"username": "reviewer"},
+			}},
+		}})
 	})
 
-	actual, err := client.ReviewContext(context.Background(), repo)
+	actual, err := client.LatestReview(context.Background(), repo, map[string]any{"iid": float64(7)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	mergeRequest, _ := actual["mr"].(map[string]any)
-	if mergeRequest["iid"] != float64(7) {
-		t.Fatalf("ReviewContext() merge request = %#v", mergeRequest)
-	}
-	review, _ := actual["review"].(map[string]any)
-	if review["body"] != "Please fix this" {
-		t.Fatalf("ReviewContext() review = %#v", review)
+	review, _ := actual.(map[string]any)
+	if review["body"] != "Please fix this" || review["author"] != "reviewer" {
+		t.Fatalf("LatestReview() = %#v", actual)
 	}
 }
 
-func TestReviewContextAllowsDetachedHead(t *testing.T) {
-	client := testClient(t, func(writer http.ResponseWriter, _ *http.Request) {
-		t.Fatal("ReviewContext() queried GitLab for a detached HEAD")
-	})
-
-	actual, err := client.ReviewContext(context.Background(), git.Context{Project: repo.Project, Commit: repo.Commit})
+func TestProjectPrefersTheConfiguredProject(t *testing.T) {
+	client := testClient(t, nil)
+	project, err := client.Project(repo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if actual["mr"] != nil || actual["review"] != nil {
-		t.Fatalf("ReviewContext() = %#v, want nil MR data", actual)
+	if project != "acme/example" {
+		t.Fatalf("Project() = %q, want the origin remote project", project)
+	}
+
+	client.project = "42"
+	if project, err = client.Project(repo); err != nil || project != "42" {
+		t.Fatalf("Project() = %q, %v, want the configured project", project, err)
+	}
+
+	client.project = ""
+	if _, err = client.Project(git.Context{}); err == nil {
+		t.Fatal("Project() accepted a repository without a project")
 	}
 }
 
@@ -171,27 +179,23 @@ func TestOpenMergeRequestRejectsAmbiguousBranches(t *testing.T) {
 	}
 }
 
-func TestCommitStatusSelectsNamedCurrentStatus(t *testing.T) {
+func TestCommitStatusesCompactsGateProvenance(t *testing.T) {
 	client := testClient(t, func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Query().Has("all") {
-			t.Fatal("CommitStatus() requested superseded statuses")
+			t.Fatal("CommitStatuses() requested superseded statuses")
 		}
 		write(writer, []any{
-			map[string]any{"name": "lint", "target_url": "https://ci.example/lint", "created_at": "2026-01-09"},
 			map[string]any{"name": "build", "target_url": "https://ci.example/2", "created_at": "2026-01-05", "status": "success", "pipeline": map[string]any{"id": float64(21)}, "author": map[string]any{"username": "jenkins"}},
 		})
 	})
 
-	targetURL, status, err := client.CommitStatus(context.Background(), "acme/example", "abc123", "build")
+	statuses, err := client.CommitStatuses(context.Background(), "acme/example", "abc123")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if targetURL != "https://ci.example/2" {
-		t.Fatalf("CommitStatus() = %q, want the current build status", targetURL)
-	}
 	expected := map[string]any{"name": "build", "status": "success", "target_url": "https://ci.example/2", "created_at": "2026-01-05", "sha": "abc123", "pipeline_id": float64(21), "author": "jenkins"}
-	if !reflect.DeepEqual(status, expected) {
-		t.Fatalf("CommitStatus() status = %#v, want %#v", status, expected)
+	if len(statuses) != 1 || !reflect.DeepEqual(statuses[0], expected) {
+		t.Fatalf("CommitStatuses() = %#v, want %#v", statuses, expected)
 	}
 }
 
@@ -255,32 +259,6 @@ func TestCommitStatusesFollowsGitLabPaginationHeader(t *testing.T) {
 	}
 	if len(statuses) != 2 || requests != 2 {
 		t.Fatalf("CommitStatuses() returned %d statuses in %d requests", len(statuses), requests)
-	}
-}
-
-func TestCommitStatusWithoutMatchingStatus(t *testing.T) {
-	client := testClient(t, func(writer http.ResponseWriter, _ *http.Request) {
-		write(writer, []any{})
-	})
-	if _, _, err := client.CommitStatus(context.Background(), "acme/example", "abc123", "build"); err == nil {
-		t.Fatal("CommitStatus() accepted a commit without a build status")
-	}
-}
-
-func TestCommitStatusRejectsUnusableCurrentStatus(t *testing.T) {
-	for name, statuses := range map[string][]any{
-		"missing target URL": {map[string]any{"name": "build", "status": "failed"}},
-		"ambiguous": {
-			map[string]any{"name": "build", "target_url": "https://ci.example/1"},
-			map[string]any{"name": "build", "target_url": "https://ci.example/2"},
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			client := testClient(t, func(writer http.ResponseWriter, _ *http.Request) { write(writer, statuses) })
-			if _, _, err := client.CommitStatus(context.Background(), "acme/example", "abc123", "build"); err == nil {
-				t.Fatalf("CommitStatus() accepted %s", name)
-			}
-		})
 	}
 }
 

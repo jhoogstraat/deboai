@@ -14,6 +14,7 @@ import (
 
 	"github.com/jhoogstraat/deboai/internal/config"
 	"github.com/jhoogstraat/deboai/internal/git"
+	"github.com/jhoogstraat/deboai/internal/vcs"
 )
 
 func TestAllExposesTheDocumentedTools(t *testing.T) {
@@ -89,7 +90,7 @@ func TestWithWorktreeLoadsEnvDirectoriesConditionally(t *testing.T) {
 	}
 }
 
-func TestSelectGitLabCommitUsesMergeRequestHeadSHA(t *testing.T) {
+func TestSelectCommitUsesMergeRequestHeadSHA(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		switch {
@@ -110,13 +111,13 @@ func TestSelectGitLabCommitUsesMergeRequestHeadSHA(t *testing.T) {
 	defer server.Close()
 	values := config.Values{"GITLAB_API_URL": server.URL, "GITLAB_TOKEN": "token"}
 
-	selection, err := selectGitLabCommit(context.Background(), git.Context{
+	selection, err := selectCommit(context.Background(), git.Context{
 		Project: "acme/example", Branch: "feature/test", Commit: "local-head",
 	}, values)
 	if err != nil {
 		t.Fatal(err)
 	}
-	buildURL, _, err := selection.client.CommitStatus(context.Background(), selection.project, selection.commit, "build")
+	buildURL, _, err := vcs.CommitStatus(context.Background(), selection.Provider, selection.Project, selection.Commit, "build")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,13 +130,13 @@ func TestSelectGitLabCommitUsesMergeRequestHeadSHA(t *testing.T) {
 	}
 }
 
-func TestSelectGitLabCommitFallsBackToCheckoutWithoutMergeRequest(t *testing.T) {
+func TestSelectCommitFallsBackToCheckoutWithoutMergeRequest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(writer).Encode([]any{})
 	}))
 	defer server.Close()
 	values := config.Values{"GITLAB_API_URL": server.URL, "GITLAB_TOKEN": "token"}
-	selection, err := selectGitLabCommit(context.Background(), git.Context{
+	selection, err := selectCommit(context.Background(), git.Context{
 		Project: "acme/example", Branch: "feature/test", Commit: "local-head",
 	}, values)
 	if err != nil {

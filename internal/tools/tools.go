@@ -10,11 +10,11 @@ import (
 	"github.com/jhoogstraat/deboai/internal/config"
 	"github.com/jhoogstraat/deboai/internal/confluence"
 	"github.com/jhoogstraat/deboai/internal/git"
-	"github.com/jhoogstraat/deboai/internal/gitlab"
 	"github.com/jhoogstraat/deboai/internal/jenkins"
 	"github.com/jhoogstraat/deboai/internal/jira"
 	"github.com/jhoogstraat/deboai/internal/jsonutil"
 	"github.com/jhoogstraat/deboai/internal/sonar"
+	"github.com/jhoogstraat/deboai/internal/vcs"
 )
 
 // Arguments holds the validated string arguments of a tool call.
@@ -65,7 +65,7 @@ func All() []Definition {
 			Description: "Return the selected worktree's matching GitLab merge request and latest actionable review comment, when available.",
 			Arguments:   []Argument{worktreeArgument},
 			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, _ Arguments) (string, error) {
-				return gitLabMergeRequestContext(ctx, repo, values)
+				return mergeRequestContext(ctx, repo, values)
 			}),
 		},
 		{
@@ -158,16 +158,16 @@ func repositoryContext(ctx context.Context, repo *git.Repo) (string, error) {
 	return jsonutil.Compact(repoContext.Map())
 }
 
-func gitLabMergeRequestContext(ctx context.Context, repo *git.Repo, values config.Values) (string, error) {
+func mergeRequestContext(ctx context.Context, repo *git.Repo, values config.Values) (string, error) {
 	repoContext, err := repo.Context(ctx)
 	if err != nil {
 		return "", err
 	}
-	client, err := gitlab.FromValues(values)
+	provider, err := vcs.FromValues(values, repoContext.RemoteHost)
 	if err != nil {
 		return "", err
 	}
-	result, err := client.ReviewContext(ctx, repoContext)
+	result, err := vcs.ReviewContext(ctx, provider, repoContext)
 	if err != nil {
 		return "", err
 	}
@@ -189,11 +189,11 @@ func jenkinsStatus(ctx context.Context, repo *git.Repo, values config.Values, bu
 		if contextErr != nil {
 			return "", contextErr
 		}
-		selection, selectionErr := selectGitLabCommit(ctx, repoContext, values)
+		selection, selectionErr := selectCommit(ctx, repoContext, values)
 		if selectionErr != nil {
 			return "", selectionErr
 		}
-		buildURL, _, err = selection.client.CommitStatus(ctx, selection.project, selection.commit, jenkins.BuildStatusName(values))
+		buildURL, _, err = vcs.CommitStatus(ctx, selection.Provider, selection.Project, selection.Commit, jenkins.BuildStatusName(values))
 		if err != nil {
 			return "", err
 		}
@@ -207,48 +207,14 @@ func jenkinsStatus(ctx context.Context, repo *git.Repo, values config.Values, bu
 	return jsonutil.Compact(jsonutil.Merge(result, report))
 }
 
-type gitLabCommitSelection struct {
-	client          *gitlab.Client
-	project         string
-	commit          string
-	mergeRequestIid any
-}
-
-func selectGitLabCommit(ctx context.Context, repoContext git.Context, values config.Values) (gitLabCommitSelection, error) {
-	client, err := gitlab.FromValues(values)
+// selectCommit resolves the VCS backend for the repository's remote host and
+// selects the commit whose CI state the tools report on.
+func selectCommit(ctx context.Context, repoContext git.Context, values config.Values) (vcs.Selection, error) {
+	provider, err := vcs.FromValues(values, repoContext.RemoteHost)
 	if err != nil {
-		return gitLabCommitSelection{}, err
+		return vcs.Selection{}, err
 	}
-	project := values.ValueOr(repoContext.Project, "GITLAB_PROJECT_ID")
-	if project == "" {
-		return gitLabCommitSelection{}, fmt.Errorf("no GitLab project found for the origin remote; set GITLAB_PROJECT_ID")
-	}
-	mergeRequest, err := client.OpenMergeRequest(ctx, repoContext)
-	if err != nil {
-		return gitLabCommitSelection{}, err
-	}
-	compactMergeRequest := jsonutil.Map(mergeRequest)
-	commit := jsonutil.String(compactMergeRequest["sha"])
-	if commit == "" {
-		commit = repoContext.Commit
-	}
-	if commit == "" {
-		return gitLabCommitSelection{}, fmt.Errorf("no commit found for the selected GitLab merge request or worktree")
-	}
-	return gitLabCommitSelection{
-		client:          client,
-		project:         project,
-		commit:          commit,
-		mergeRequestIid: compactMergeRequest["iid"],
-	}, nil
-}
-
-func (s gitLabCommitSelection) Map() map[string]any {
-	result := map[string]any{"commit": s.commit}
-	if s.mergeRequestIid != nil {
-		result["mr"] = s.mergeRequestIid
-	}
-	return result
+	return vcs.SelectCommit(ctx, provider, repoContext)
 }
 
 // ciGateRuns exposes the structured GitLab records that bridge an MR commit to
@@ -258,11 +224,11 @@ func ciGateRuns(ctx context.Context, repo *git.Repo, values config.Values) (stri
 	if err != nil {
 		return "", err
 	}
-	selection, err := selectGitLabCommit(ctx, repoContext, values)
+	selection, err := selectCommit(ctx, repoContext, values)
 	if err != nil {
 		return "", err
 	}
-	statuses, err := selection.client.CommitStatuses(ctx, selection.project, selection.commit)
+	statuses, err := selection.Provider.CommitStatuses(ctx, selection.Project, selection.Commit)
 	if err != nil {
 		return "", err
 	}
@@ -373,18 +339,15 @@ func openMergeRequestIid(ctx context.Context, repoContext git.Context, values co
 	if values.Value("GITLAB_API_URL") == "" || values.Value("GITLAB_TOKEN") == "" {
 		return nil, nil
 	}
-	client, err := gitlab.FromValues(values)
+	provider, err := vcs.FromValues(values, repoContext.RemoteHost)
 	if err != nil {
 		return nil, err
 	}
-	mergeRequest, err := client.OpenMergeRequest(ctx, repoContext)
+	change, err := provider.OpenChange(ctx, repoContext)
 	if err != nil {
 		return nil, err
 	}
-	if mergeRequest == nil {
-		return nil, nil
-	}
-	return mergeRequest["iid"], nil
+	return change["iid"], nil
 }
 
 // sonarProjectKey uses explicit configuration first. When it is absent, it
@@ -401,11 +364,11 @@ func sonarProjectKeyFromGitLab(ctx context.Context, repoContext git.Context, val
 	if err != nil {
 		return "", "", err
 	}
-	selection, err := selectGitLabCommit(ctx, repoContext, values)
+	selection, err := selectCommit(ctx, repoContext, values)
 	if err != nil {
 		return "", "", err
 	}
-	statuses, err := selection.client.CommitStatuses(ctx, selection.project, selection.commit)
+	statuses, err := selection.Provider.CommitStatuses(ctx, selection.Project, selection.Commit)
 	if err != nil {
 		return "", "", err
 	}
@@ -424,7 +387,7 @@ func sonarProjectKeyFromGitLab(ctx context.Context, repoContext git.Context, val
 		}
 	}
 	if len(candidates) > 1 {
-		return "", "", fmt.Errorf("multiple SonarQube project keys found in GitLab statuses for commit %s; set SONAR_PROJECT_KEY", selection.commit)
+		return "", "", fmt.Errorf("multiple SonarQube project keys found in GitLab statuses for commit %s; set SONAR_PROJECT_KEY", selection.Commit)
 	}
-	return "", "", fmt.Errorf("no SonarQube project key found in GitLab statuses for commit %s; set SONAR_PROJECT_KEY", selection.commit)
+	return "", "", fmt.Errorf("no SonarQube project key found in GitLab statuses for commit %s; set SONAR_PROJECT_KEY", selection.Commit)
 }
