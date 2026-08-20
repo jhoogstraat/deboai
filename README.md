@@ -36,7 +36,7 @@ Run `debo` or `debo --help` to see the command list.
 | Command | Returns |
 | --- | --- |
 | `debo repository` | Local Git repository and checkout context. |
-| `debo review` | Matching GitLab merge request and latest actionable review comment, when available. |
+| `debo review` | Matching merge request and its actionable review comments, when available. |
 | `debo ci` | Structured GitLab status records for CI gates attached to the selected merge-request head. |
 | `debo jenkins [build-url]` | Build result, failed and skipped stages, failing tests, and console highlights. Without a URL, locates the build for the selected merge-request head or current commit through GitLab. |
 | `debo jira <ticket> [--attachment ID-OR-NAME]` | Compact Jira issue fields, comments, links, and attachments. Images and an explicitly selected attachment are downloaded into the selected worktree. |

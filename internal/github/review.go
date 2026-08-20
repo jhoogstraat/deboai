@@ -71,10 +71,10 @@ func CompactPullRequest(value map[string]any) map[string]any {
 	}
 }
 
-// LatestReview returns the latest actionable review comment on change in
-// compact form, or nil when there is none. Diff-anchored pull request review
-// comments are preferred over general issue comments.
-func (c *Client) LatestReview(ctx context.Context, repo git.Context, change map[string]any) (any, error) {
+// Reviews returns every actionable review comment on change in compact form,
+// oldest first, or nil when there are none. Diff-anchored pull request review
+// comments and general issue comments are both included.
+func (c *Client) Reviews(ctx context.Context, repo git.Context, change map[string]any) ([]map[string]any, error) {
 	project, err := c.Project(repo)
 	if err != nil {
 		return nil, err
@@ -93,23 +93,13 @@ func (c *Client) LatestReview(ctx context.Context, repo git.Context, change map[
 	if err != nil {
 		return nil, err
 	}
-	return CompactReviewComment(c.latestReview(reviewComments, issueComments, login)), nil
-}
 
-// latestReview picks the newest actionable comment, preferring comments
-// anchored to a diff position over general discussion.
-func (c *Client) latestReview(reviewComments, issueComments []map[string]any, excludedAuthor string) map[string]any {
-	candidates := c.actionableComments(reviewComments, excludedAuthor)
-	if len(candidates) == 0 {
-		candidates = c.actionableComments(issueComments, excludedAuthor)
-	}
-	var latest map[string]any
-	for _, candidate := range candidates {
-		if latest == nil || fmt.Sprint(candidate["created_at"]) > fmt.Sprint(latest["created_at"]) {
-			latest = candidate
-		}
-	}
-	return latest
+	comments := c.actionableComments(reviewComments, login)
+	comments = append(comments, c.actionableComments(issueComments, login)...)
+	slices.SortStableFunc(comments, func(a, b map[string]any) int {
+		return strings.Compare(fmt.Sprint(a["created_at"]), fmt.Sprint(b["created_at"]))
+	})
+	return CompactReviewComments(comments), nil
 }
 
 func (c *Client) actionableComments(comments []map[string]any, excludedAuthor string) []map[string]any {
@@ -127,10 +117,23 @@ func (c *Client) actionableComments(comments []map[string]any, excludedAuthor st
 	return actionable
 }
 
+// CompactReviewComments reduces each comment to its body and diff position, or
+// nil when there are no comments.
+func CompactReviewComments(comments []map[string]any) []map[string]any {
+	if len(comments) == 0 {
+		return nil
+	}
+	reviews := make([]map[string]any, 0, len(comments))
+	for _, comment := range comments {
+		reviews = append(reviews, CompactReviewComment(comment))
+	}
+	return reviews
+}
+
 // CompactReviewComment reduces a comment to its body and diff position,
 // matching the compact review shape. Fields GitHub does not expose over REST,
 // such as the diff base SHA and thread resolution, are omitted.
-func CompactReviewComment(comment map[string]any) any {
+func CompactReviewComment(comment map[string]any) map[string]any {
 	if comment == nil {
 		return nil
 	}

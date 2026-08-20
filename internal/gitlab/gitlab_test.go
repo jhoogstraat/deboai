@@ -27,7 +27,7 @@ func TestCompactMergeRequest(t *testing.T) {
 }
 
 func TestCompactReviewFlattensPosition(t *testing.T) {
-	actual := CompactReview(map[string]any{
+	review := CompactReview(map[string]any{
 		"id":     float64(3),
 		"body":   "Please rename this",
 		"author": map[string]any{"username": "reviewer"},
@@ -36,7 +36,6 @@ func TestCompactReviewFlattensPosition(t *testing.T) {
 			"line_range": map[string]any{"end": map[string]any{"new_line": float64(12)}},
 		},
 	})
-	review, _ := actual.(map[string]any)
 	if review["author"] != "reviewer" || review["path"] != "internal/app.go" || review["line"] != float64(12) {
 		t.Fatalf("CompactReview() = %#v", review)
 	}
@@ -45,7 +44,7 @@ func TestCompactReviewFlattensPosition(t *testing.T) {
 	}
 }
 
-func TestLatestReviewPrefersPositionedUnresolvedNotes(t *testing.T) {
+func TestActionableNotesKeepsUnresolvedNotesOldestFirst(t *testing.T) {
 	client := testClient(t, nil)
 	client.ignoredAuthors = []string{"ci-bot"}
 	discussions := []map[string]any{
@@ -59,9 +58,9 @@ func TestLatestReviewPrefersPositionedUnresolvedNotes(t *testing.T) {
 				"position": map[string]any{"new_path": "app.go"}},
 		}},
 	}
-	latest := client.latestReview(discussions, "me")
-	if latest["body"] != "inline comment" {
-		t.Fatalf("latestReview() = %#v, want the positioned note", latest)
+	notes := client.actionableNotes(discussions, "me")
+	if len(notes) != 2 || notes[0]["body"] != "inline comment" || notes[1]["body"] != "general comment" {
+		t.Fatalf("actionableNotes() = %#v, want the actionable notes oldest first", notes)
 	}
 }
 
@@ -93,27 +92,35 @@ func TestOpenChangeReturnsNilWithoutOpenMergeRequest(t *testing.T) {
 	}
 }
 
-func TestLatestReviewCompactsTheActionableNote(t *testing.T) {
+func TestReviewsCompactsTheActionableNotes(t *testing.T) {
 	client := testClient(t, func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/user" {
 			write(writer, map[string]any{"username": "me"})
 			return
 		}
 		write(writer, []any{map[string]any{
-			"notes": []any{map[string]any{
-				"id": float64(3), "body": "Please fix this", "created_at": "2026-01-01",
-				"author": map[string]any{"username": "reviewer"},
-			}},
+			"notes": []any{
+				map[string]any{
+					"id": float64(3), "body": "Please fix this", "created_at": "2026-01-01",
+					"author": map[string]any{"username": "reviewer"},
+				},
+				map[string]any{
+					"id": float64(4), "body": "And this too", "created_at": "2026-01-02",
+					"author": map[string]any{"username": "reviewer"},
+				},
+			},
 		}})
 	})
 
-	actual, err := client.LatestReview(context.Background(), repo, map[string]any{"iid": float64(7)})
+	reviews, err := client.Reviews(context.Background(), repo, map[string]any{"iid": float64(7)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	review, _ := actual.(map[string]any)
-	if review["body"] != "Please fix this" || review["author"] != "reviewer" {
-		t.Fatalf("LatestReview() = %#v", actual)
+	if len(reviews) != 2 || reviews[0]["body"] != "Please fix this" || reviews[1]["body"] != "And this too" {
+		t.Fatalf("Reviews() = %#v, want both actionable notes", reviews)
+	}
+	if reviews[0]["author"] != "reviewer" {
+		t.Fatalf("Reviews() = %#v", reviews)
 	}
 }
 

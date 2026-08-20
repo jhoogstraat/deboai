@@ -100,12 +100,12 @@ func TestReviewContextAllowsNoMergeRequest(t *testing.T) {
 	if requests != 1 {
 		t.Fatalf("ReviewContext() made %d requests, want only the merge request lookup", requests)
 	}
-	if actual["mr"] != nil || actual["review"] != nil {
-		t.Fatalf("ReviewContext() = %#v, want nil merge request and review", actual)
+	if actual["mr"] != nil || actual["reviews"] != nil {
+		t.Fatalf("ReviewContext() = %#v, want nil merge request and reviews", actual)
 	}
 }
 
-func TestReviewContextIncludesAvailableMergeRequestReview(t *testing.T) {
+func TestReviewContextIncludesAllMergeRequestReviews(t *testing.T) {
 	provider := testProvider(t, func(writer http.ResponseWriter, request *http.Request) {
 		switch {
 		case strings.HasSuffix(request.URL.Path, "/merge_requests"):
@@ -114,10 +114,16 @@ func TestReviewContextIncludesAvailableMergeRequestReview(t *testing.T) {
 			write(writer, map[string]any{"username": "me"})
 		default:
 			write(writer, []any{map[string]any{
-				"notes": []any{map[string]any{
-					"id": float64(3), "body": "Please fix this", "created_at": "2026-01-01",
-					"author": map[string]any{"username": "reviewer"},
-				}},
+				"notes": []any{
+					map[string]any{
+						"id": float64(3), "body": "Please fix this", "created_at": "2026-01-01",
+						"author": map[string]any{"username": "reviewer"},
+					},
+					map[string]any{
+						"id": float64(4), "body": "And rename that", "created_at": "2026-01-02",
+						"author": map[string]any{"username": "reviewer"},
+					},
+				},
 			}})
 		}
 	})
@@ -130,9 +136,9 @@ func TestReviewContextIncludesAvailableMergeRequestReview(t *testing.T) {
 	if mergeRequest["iid"] != float64(7) {
 		t.Fatalf("ReviewContext() merge request = %#v", mergeRequest)
 	}
-	review, _ := actual["review"].(map[string]any)
-	if review["body"] != "Please fix this" {
-		t.Fatalf("ReviewContext() review = %#v", review)
+	reviews, _ := actual["reviews"].([]map[string]any)
+	if len(reviews) != 2 || reviews[0]["body"] != "Please fix this" || reviews[1]["body"] != "And rename that" {
+		t.Fatalf("ReviewContext() reviews = %#v, want both review comments", reviews)
 	}
 }
 
@@ -145,7 +151,7 @@ func TestReviewContextAllowsDetachedHead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if actual["mr"] != nil || actual["review"] != nil {
+	if actual["mr"] != nil || actual["reviews"] != nil {
 		t.Fatalf("ReviewContext() = %#v, want nil MR data", actual)
 	}
 }

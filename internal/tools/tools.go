@@ -62,7 +62,7 @@ func All() []Definition {
 		},
 		{
 			Name:        "review",
-			Description: "Return the selected worktree's matching GitLab merge request and latest actionable review comment, when available.",
+			Description: "Return the selected worktree's matching merge request and its actionable review comments, when available.",
 			Arguments:   []Argument{worktreeArgument},
 			Handler: withWorktree(func(ctx context.Context, repo *git.Repo, values config.Values, _ Arguments) (string, error) {
 				return mergeRequestContext(ctx, repo, values)

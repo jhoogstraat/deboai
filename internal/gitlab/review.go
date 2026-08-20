@@ -23,9 +23,9 @@ func (c *Client) OpenChange(ctx context.Context, repo git.Context) (map[string]a
 	return CompactMergeRequest(mergeRequest), nil
 }
 
-// LatestReview returns the latest actionable review comment on change in
-// compact form, or nil when there is none.
-func (c *Client) LatestReview(ctx context.Context, repo git.Context, change map[string]any) (any, error) {
+// Reviews returns every actionable review comment on change in compact form,
+// oldest first, or nil when there are none.
+func (c *Client) Reviews(ctx context.Context, repo git.Context, change map[string]any) ([]map[string]any, error) {
 	username, err := c.CurrentUsername(ctx)
 	if err != nil {
 		return nil, err
@@ -34,7 +34,7 @@ func (c *Client) LatestReview(ctx context.Context, repo git.Context, change map[
 	if err != nil {
 		return nil, err
 	}
-	return CompactReview(c.latestReview(discussions, username)), nil
+	return CompactReviews(c.actionableNotes(discussions, username)), nil
 }
 
 // CompactMergeRequest reduces a merge request to the fields worth reporting.
@@ -46,8 +46,21 @@ func CompactMergeRequest(value map[string]any) map[string]any {
 	return result
 }
 
+// CompactReviews reduces each review note to its body and diff position, or
+// nil when there are no notes.
+func CompactReviews(notes []map[string]any) []map[string]any {
+	if len(notes) == 0 {
+		return nil
+	}
+	reviews := make([]map[string]any, 0, len(notes))
+	for _, note := range notes {
+		reviews = append(reviews, CompactReview(note))
+	}
+	return reviews
+}
+
 // CompactReview reduces a review note to its body and diff position.
-func CompactReview(note map[string]any) any {
+func CompactReview(note map[string]any) map[string]any {
 	if note == nil {
 		return nil
 	}
@@ -75,10 +88,10 @@ func CompactReview(note map[string]any) any {
 	}
 }
 
-// latestReview picks the newest actionable note, preferring notes anchored to a
-// diff position over general discussion.
-func (c *Client) latestReview(discussions []map[string]any, excludedAuthor string) map[string]any {
-	var candidates []map[string]any
+// actionableNotes collects every actionable note of the unresolved
+// discussions, oldest first.
+func (c *Client) actionableNotes(discussions []map[string]any, excludedAuthor string) []map[string]any {
+	var notes []map[string]any
 	for _, discussion := range discussions {
 		if resolved, _ := discussion["resolved"].(bool); resolved {
 			continue
@@ -86,28 +99,14 @@ func (c *Client) latestReview(discussions []map[string]any, excludedAuthor strin
 		for _, rawNote := range jsonutil.Array(discussion, "notes") {
 			note := jsonutil.Map(rawNote)
 			if c.actionableNote(note, excludedAuthor) {
-				candidates = append(candidates, note)
+				notes = append(notes, note)
 			}
 		}
 	}
-
-	positioned := make([]map[string]any, 0)
-	for _, candidate := range candidates {
-		if _, ok := candidate["position"].(map[string]any); ok {
-			positioned = append(positioned, candidate)
-		}
-	}
-	if len(positioned) > 0 {
-		candidates = positioned
-	}
-
-	var latest map[string]any
-	for _, candidate := range candidates {
-		if latest == nil || fmt.Sprint(candidate["created_at"]) > fmt.Sprint(latest["created_at"]) {
-			latest = candidate
-		}
-	}
-	return latest
+	slices.SortStableFunc(notes, func(a, b map[string]any) int {
+		return strings.Compare(fmt.Sprint(a["created_at"]), fmt.Sprint(b["created_at"]))
+	})
+	return notes
 }
 
 func (c *Client) actionableNote(note map[string]any, excludedAuthor string) bool {

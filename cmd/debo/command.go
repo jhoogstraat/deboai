@@ -116,7 +116,7 @@ func newRootCommand(version string, definitions []tools.Definition, input io.Rea
 		},
 		&cobra.Command{
 			Use:     "review",
-			Short:   "Show the matching GitLab merge request and review",
+			Short:   "Show the matching merge request and its review comments",
 			Args:    cobra.NoArgs,
 			Example: "  debo review",
 			RunE:    runTool("review", noArguments),

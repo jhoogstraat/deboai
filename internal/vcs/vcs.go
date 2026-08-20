@@ -24,9 +24,9 @@ type Provider interface {
 	// OpenChange returns the compact open change (merge request) for the
 	// branch of repo, or nil when there is none.
 	OpenChange(ctx context.Context, repo git.Context) (map[string]any, error)
-	// LatestReview returns the latest actionable review comment on the open
-	// change in compact form, or nil when there is none.
-	LatestReview(ctx context.Context, repo git.Context, change map[string]any) (any, error)
+	// Reviews returns every actionable review comment on the open change in
+	// compact form, oldest first, or nil when there are none.
+	Reviews(ctx context.Context, repo git.Context, change map[string]any) ([]map[string]any, error)
 	// CommitStatuses returns compact provenance for the latest status of
 	// every CI gate on a commit.
 	CommitStatuses(ctx context.Context, project, commit string) ([]map[string]any, error)

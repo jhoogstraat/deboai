@@ -8,12 +8,12 @@ import (
 	"github.com/jhoogstraat/deboai/internal/jsonutil"
 )
 
-// ReviewContext returns the open change and latest actionable review comment
+// ReviewContext returns the open change and every actionable review comment
 // for the current branch when an open change exists.
 func ReviewContext(ctx context.Context, provider Provider, repo git.Context) (map[string]any, error) {
 	result := map[string]any{
-		"mr":     nil,
-		"review": nil,
+		"mr":      nil,
+		"reviews": nil,
 	}
 	if repo.Branch == "" {
 		return result, nil
@@ -25,12 +25,14 @@ func ReviewContext(ctx context.Context, provider Provider, repo git.Context) (ma
 	if change == nil {
 		return result, nil
 	}
-	review, err := provider.LatestReview(ctx, repo, change)
+	reviews, err := provider.Reviews(ctx, repo, change)
 	if err != nil {
 		return nil, err
 	}
 	result["mr"] = change
-	result["review"] = review
+	if len(reviews) > 0 {
+		result["reviews"] = reviews
+	}
 	return result, nil
 }
 

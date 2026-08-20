@@ -33,7 +33,7 @@ func TestCompactPullRequest(t *testing.T) {
 }
 
 func TestCompactReviewCommentKeepsDiffPosition(t *testing.T) {
-	actual := CompactReviewComment(map[string]any{
+	comment := CompactReviewComment(map[string]any{
 		"id":         float64(3),
 		"body":       "Please rename this",
 		"user":       map[string]any{"login": "reviewer"},
@@ -42,7 +42,6 @@ func TestCompactReviewCommentKeepsDiffPosition(t *testing.T) {
 		"commit_id":  "pr-head",
 		"created_at": "2026-01-01",
 	})
-	comment, _ := actual.(map[string]any)
 	if comment["author"] != "reviewer" || comment["path"] != "internal/app.go" || comment["line"] != float64(12) || comment["head_sha"] != "pr-head" {
 		t.Fatalf("CompactReviewComment() = %#v", comment)
 	}
@@ -119,7 +118,7 @@ func TestOpenChangeRejectsAmbiguousBranches(t *testing.T) {
 	}
 }
 
-func TestLatestReviewPrefersPositionedComments(t *testing.T) {
+func TestReviewsMergesActionableCommentsOldestFirst(t *testing.T) {
 	client := testClient(t, func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/user":
@@ -140,47 +139,22 @@ func TestLatestReviewPrefersPositionedComments(t *testing.T) {
 	})
 	client.ignoredAuthors = []string{"ci-bot"}
 
-	actual, err := client.LatestReview(context.Background(), repo, map[string]any{"iid": float64(7)})
+	reviews, err := client.Reviews(context.Background(), repo, map[string]any{"iid": float64(7)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	review, _ := actual.(map[string]any)
-	if review["body"] != "inline comment" {
-		t.Fatalf("LatestReview() = %#v, want the positioned comment", review)
+	if len(reviews) != 2 || reviews[0]["body"] != "inline comment" || reviews[1]["body"] != "general comment" {
+		t.Fatalf("Reviews() = %#v, want the actionable comments oldest first", reviews)
+	}
+	if reviews[0]["path"] != "app.go" {
+		t.Fatalf("Reviews() = %#v, want the diff position on the review comment", reviews)
+	}
+	if _, ok := reviews[1]["path"]; ok {
+		t.Fatalf("Reviews() = %#v, want no diff position on an issue comment", reviews)
 	}
 }
 
-func TestLatestReviewFallsBackToIssueComments(t *testing.T) {
-	client := testClient(t, func(writer http.ResponseWriter, request *http.Request) {
-		switch request.URL.Path {
-		case "/user":
-			write(writer, map[string]any{"login": "me"})
-		case "/repos/acme/example/pulls/7/comments":
-			write(writer, []any{})
-		case "/repos/acme/example/issues/7/comments":
-			write(writer, []any{
-				map[string]any{"body": "older", "user": map[string]any{"login": "reviewer"}, "created_at": "2026-01-01"},
-				map[string]any{"body": "please split this PR", "user": map[string]any{"login": "reviewer"}, "created_at": "2026-01-06"},
-			})
-		default:
-			t.Fatalf("unexpected request: %s", request.URL.Path)
-		}
-	})
-
-	actual, err := client.LatestReview(context.Background(), repo, map[string]any{"iid": float64(7)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	review, _ := actual.(map[string]any)
-	if review["body"] != "please split this PR" || review["author"] != "reviewer" {
-		t.Fatalf("LatestReview() = %#v, want the latest issue comment", review)
-	}
-	if _, ok := review["path"]; ok {
-		t.Fatalf("LatestReview() = %#v, want no diff position on an issue comment", review)
-	}
-}
-
-func TestLatestReviewReturnsNilWithoutActionableComments(t *testing.T) {
+func TestReviewsReturnsNilWithoutActionableComments(t *testing.T) {
 	client := testClient(t, func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/user" {
 			write(writer, map[string]any{"login": "me"})
@@ -189,12 +163,12 @@ func TestLatestReviewReturnsNilWithoutActionableComments(t *testing.T) {
 		write(writer, []any{map[string]any{"body": "mine", "user": map[string]any{"login": "me"}, "created_at": "2026-01-01"}})
 	})
 
-	actual, err := client.LatestReview(context.Background(), repo, map[string]any{"iid": float64(7)})
+	reviews, err := client.Reviews(context.Background(), repo, map[string]any{"iid": float64(7)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if actual != nil {
-		t.Fatalf("LatestReview() = %#v, want nil", actual)
+	if reviews != nil {
+		t.Fatalf("Reviews() = %#v, want nil", reviews)
 	}
 }
 
