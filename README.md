@@ -118,7 +118,7 @@ MCP mode is opt-in and speaks JSON-RPC over stdio. Register it with your assista
 }
 ```
 
-The server exposes the existing `repository`, `review`, `jenkins`, `ci`, `jira`, `confluence`, and `sonar` tools. Each accepts an optional `worktree_path`, allowing one process to inspect multiple worktrees. The server defaults to MCP protocol revision `2026-07-28`, negotiating down to `2025-06-18`, `2025-03-26`, or `2024-11-05`.
+The server exposes the existing `repository`, `review`, `jenkins`, `ci`, `jira`, `confluence`, and `sonar` tools. Each accepts an optional `worktree_path`, allowing one process to inspect multiple worktrees. The server defaults to MCP protocol revision `2026-07-28`, negotiating down to `2025-11-25`, `2025-06-18`, `2025-03-26`, or `2024-11-05` — it answers `initialize` with the newest revision that is not newer than the one the client asked for, so clients that predate `2026-07-28` still connect.
 
 To try it by hand:
 

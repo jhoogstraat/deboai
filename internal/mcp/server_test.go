@@ -28,7 +28,11 @@ func TestChooseProtocolVersion(t *testing.T) {
 		expected  string
 	}{
 		{requested: "2025-03-26", expected: "2025-03-26"},
+		{requested: "2025-11-25", expected: "2025-11-25"},
 		{requested: "2026-07-28", expected: "2026-07-28"},
+		{requested: "2026-02-01", expected: "2025-11-25"},
+		{requested: "2027-01-01", expected: CurrentProtocol},
+		{requested: "2024-10-07", expected: "2024-11-05"},
 		{requested: "unsupported", expected: CurrentProtocol},
 		{requested: "", expected: CurrentProtocol},
 	} {
