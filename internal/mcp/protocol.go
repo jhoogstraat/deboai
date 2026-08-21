@@ -11,12 +11,14 @@ import (
 // CurrentProtocol is the protocol revision this server speaks by default.
 const CurrentProtocol = "2026-07-28"
 
-// SupportedProtocols lists the revisions accepted during initialization.
-var SupportedProtocols = map[string]bool{
-	"2024-11-05": true,
-	"2025-03-26": true,
-	"2025-06-18": true,
-	"2026-07-28": true,
+// SupportedProtocols lists the revisions accepted during initialization, oldest
+// first. Revisions are dated, so the slice order matches string order.
+var SupportedProtocols = []string{
+	"2024-11-05",
+	"2025-03-26",
+	"2025-06-18",
+	"2025-11-25",
+	CurrentProtocol,
 }
 
 // JSON-RPC error codes used by this server.
@@ -100,9 +102,19 @@ func StringProperty(description string) map[string]any {
 	return map[string]any{"type": "string", "description": description}
 }
 
+// chooseProtocolVersion answers an initialize request with the newest revision
+// this server supports that the client is not older than. Clients reject any
+// answer they do not know themselves, so replying with CurrentProtocol to a
+// client that asked for an older revision would fail the handshake outright.
 func chooseProtocolVersion(requested string) string {
-	if SupportedProtocols[requested] {
-		return requested
+	if requested == "" {
+		return CurrentProtocol
 	}
-	return CurrentProtocol
+	for i := len(SupportedProtocols) - 1; i >= 0; i-- {
+		if SupportedProtocols[i] <= requested {
+			return SupportedProtocols[i]
+		}
+	}
+	// Older than anything we speak: offer the oldest revision we have.
+	return SupportedProtocols[0]
 }

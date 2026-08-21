@@ -30,23 +30,23 @@ A missing `branch` means HEAD is detached.
 ## `review`
 
 When the selected worktree's current branch has an open GitLab merge request,
-it reports that merge request and its latest actionable review comment. It
-fails when several open merge requests exist for the branch.
+it reports that merge request and every actionable review comment on it, oldest
+first. It fails when several open merge requests exist for the branch.
 
 ```json
 {
   "mr": { "iid": 7, "title": "…", "state": "opened", "draft": false, "source_branch": "…", "target_branch": "…", "sha": "…", "web_url": "…" },
-  "review": { "id": 3, "author": "reviewer", "created_at": "…", "body": "…", "path": "internal/app.go", "line": 12, "position_type": "text", "base_sha": "…", "head_sha": "…", "resolvable": true, "resolved": false }
+  "reviews": [
+    { "id": 3, "author": "reviewer", "created_at": "…", "body": "…", "path": "internal/app.go", "line": 12, "position_type": "text", "base_sha": "…", "head_sha": "…", "resolvable": true, "resolved": false }
+  ]
 }
 ```
 
 When HEAD is detached or the branch has no open merge request, both
-`mr` and `review` are `null`.
+`mr` and `reviews` are `null`.
 
-`review` is `null` when no unresolved comment is left by anyone other than the
+`reviews` is `null` when no unresolved comment is left by anyone other than the
 authenticated user and the accounts listed in `GITLAB_IGNORED_REVIEW_AUTHORS`.
-Comments anchored to a diff position are preferred over general discussion, and
-the newest one wins.
 
 ## `jenkins`
 

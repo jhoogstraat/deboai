@@ -22,6 +22,9 @@ type Options struct {
 	BaseURL string
 	// Token is a personal access token sent as PRIVATE-TOKEN.
 	Token string
+	// Project overrides the project path or numeric ID parsed from the
+	// origin remote.
+	Project string
 	// IgnoredAuthors are usernames whose merge request notes are never
 	// treated as actionable review comments, such as CI service accounts.
 	IgnoredAuthors []string
@@ -33,6 +36,7 @@ type Options struct {
 type Client struct {
 	baseURL        string
 	token          string
+	project        string
 	ignoredAuthors []string
 	http           *http.Client
 }
@@ -52,13 +56,14 @@ func New(options Options) (*Client, error) {
 	return &Client{
 		baseURL:        options.BaseURL,
 		token:          options.Token,
+		project:        options.Project,
 		ignoredAuthors: options.IgnoredAuthors,
 		http:           client,
 	}, nil
 }
 
-// FromValues builds a client from GITLAB_API_URL, GITLAB_TOKEN, and the optional
-// GITLAB_IGNORED_REVIEW_AUTHORS list.
+// FromValues builds a client from GITLAB_API_URL, GITLAB_TOKEN, and the
+// optional GITLAB_PROJECT_ID and GITLAB_IGNORED_REVIEW_AUTHORS values.
 func FromValues(values config.Values) (*Client, error) {
 	baseURL, err := values.Require("GITLAB_API_URL")
 	if err != nil {
@@ -71,8 +76,22 @@ func FromValues(values config.Values) (*Client, error) {
 	return New(Options{
 		BaseURL:        baseURL,
 		Token:          token,
+		Project:        values.Value("GITLAB_PROJECT_ID"),
 		IgnoredAuthors: values.List("GITLAB_IGNORED_REVIEW_AUTHORS"),
 	})
+}
+
+// Project resolves the GitLab project to query, preferring the configured
+// GITLAB_PROJECT_ID over the project parsed from the origin remote.
+func (c *Client) Project(repo git.Context) (string, error) {
+	project := c.project
+	if project == "" {
+		project = repo.Project
+	}
+	if project == "" {
+		return "", fmt.Errorf("no GitLab project found for the origin remote; set GITLAB_PROJECT_ID")
+	}
+	return project, nil
 }
 
 // Request performs an API call. When optional is set, a 404 yields a nil body
@@ -231,35 +250,6 @@ func (c *Client) CommitStatuses(ctx context.Context, project, commit string) ([]
 		compact = append(compact, CompactCommitStatus(status, commit))
 	}
 	return compact, nil
-}
-
-// CommitStatus returns the target URL and a compact view of the most recent
-// commit status named statusName, which is how a CI build is located for a
-// commit. The project is a path or numeric ID.
-func (c *Client) CommitStatus(ctx context.Context, project, commit, statusName string) (targetURL string, status map[string]any, err error) {
-	statuses, err := c.CommitStatuses(ctx, project, commit)
-	if err != nil {
-		return "", nil, err
-	}
-
-	var selected map[string]any
-	for _, candidate := range statuses {
-		if candidate["name"] != statusName {
-			continue
-		}
-		if selected != nil {
-			return "", nil, fmt.Errorf("multiple current %q commit statuses found for commit %s", statusName, commit)
-		}
-		selected = candidate
-	}
-	if selected == nil {
-		return "", nil, fmt.Errorf("no %q commit status found for commit %s", statusName, commit)
-	}
-	targetURL = jsonutil.String(selected["target_url"])
-	if targetURL == "" {
-		return "", nil, fmt.Errorf("current %q commit status for commit %s has no target URL", statusName, commit)
-	}
-	return targetURL, selected, nil
 }
 
 // CompactCommitStatus keeps the identity, target, and timing fields needed to
